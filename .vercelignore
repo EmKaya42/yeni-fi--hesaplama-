@@ -1,0 +1,13 @@
+# Keep Vercel bundle small; OCR runs on Railway.
+requirements-ocr.txt
+requirements-railway.txt
+Procfile
+railway.toml
+README.md
+.python-version
+__pycache__/
+**/__pycache__/
+data/
+*.db
+*.xlsx
+*.pyc
