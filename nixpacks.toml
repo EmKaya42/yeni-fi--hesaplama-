@@ -1,4 +1,4 @@
-# Nixpacks configuration for Railway
+﻿# Nixpacks configuration for Railway
 [phases.setup]
 nixPkgs = ["python311", "gcc", "glib", "libGL", "libGLU"]
 
@@ -6,7 +6,6 @@ nixPkgs = ["python311", "gcc", "glib", "libGL", "libGLU"]
 cmds = [
   "python3 -m venv /opt/venv",
   "/opt/venv/bin/pip install --upgrade pip",
-  "/opt/venv/bin/pip uninstall -y opencv-python opencv-contrib-python || true",
   "/opt/venv/bin/pip install -r requirements-railway.txt"
 ]
 

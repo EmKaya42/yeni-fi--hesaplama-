@@ -1,4 +1,4 @@
-from __future__ import annotations
+ï»¿from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
@@ -31,8 +31,8 @@ def _get_reader() -> tuple[Any, str]:
         paddle_err = err
 
     raise RuntimeError(
-        f"OCR motorlarý yüklenemedi. "
-        f"[EasyOCR hatasý: {easy_err}] | [PaddleOCR hatasý: {paddle_err}]"
+        f"OCR motorlari yuklenemedi. "
+        f"[EasyOCR hatasi: {easy_err}] | [PaddleOCR hatasi: {paddle_err}]"
     )
 
 
