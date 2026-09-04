@@ -25,7 +25,29 @@ const zMetadata=document.createElement('div'); zMetadata.className='form-grid z-
 async function loadDashboard(){ const data=await apiFetch('/api/dashboard').then(r=>r.json()); const receipt=data.receipts,z=data.z_reports; document.querySelector('#daily-turnover').textContent=money(data.periods.daily); document.querySelector('#monthly-turnover').textContent=money(data.periods.monthly); document.querySelector('#total-vat').textContent=money(Number(receipt.vat)+Number(z.vat)); document.querySelector('#total-cash').textContent=money(z.cash); document.querySelector('#total-card').textContent=money(z.card); document.querySelector('#total-refund').textContent=money(z.refund); document.querySelector('#total-discount').textContent=money(z.discount); document.querySelector('#receipt-count').textContent=`${receipt.count} Fiş kaydı`; document.querySelector('#z-count').textContent=`${z.count} Z raporu`; }
 async function loadReceipts(){ const rows=await apiFetch('/api/receipts').then(r=>r.json()); document.querySelector('#receipt-table').innerHTML=rows.length?rows.map(row=>`<tr><td>${row.product_name}</td><td>${row.receipt_datetime||'-'}</td><td>%${row.vat_rate||0}</td><td>${money(row.total_amount)}</td></tr>`).join(''):'<tr><td colspan="4">Henüz kayıt yok.</td></tr>'; }
 async function loadZReports(){ const rows=await apiFetch('/api/z-reports').then(r=>r.json()); document.querySelector('#z-table').innerHTML=rows.length?rows.map(row=>`<tr><td>${row.report_no}</td><td>${row.report_datetime||'-'}</td><td>${money(row.daily_turnover)}</td><td>${money(row.cash_amount)}</td><td>${money(row.card_amount)}</td></tr>`).join(''):'<tr><td colspan="5">Henüz kayıt yok.</td></tr>'; }
-async function runOcr(inputId, endpoint, formId, fields, statusId){ const input=document.querySelector(`#${inputId}`); if(!input.files[0]) return; const body=new FormData(); body.append('image',input.files[0]); const status=document.querySelector(`#${statusId}`); status.textContent='Okunuyor...'; const response=await apiFetch(endpoint,{method:'POST',body}).then(r=>r.json()); if(response.data) fillForm(document.querySelector(`#${formId}`),response.data,fields); status.textContent=response.error?'Manuel giriş kullanılabilir':'Alanlar dolduruldu, kontrol edin'; toast(response.error||'OCR sonucu forma aktarıldı.'); input.value=''; }
+async function runOcr(inputId, endpoint, formId, fields, statusId){
+  const input=document.querySelector(`#${inputId}`);
+  if(!input.files[0]) return;
+  const body=new FormData();
+  body.append('image',input.files[0]);
+  const status=document.querySelector(`#${statusId}`);
+  status.textContent='Okunuyor...';
+  try {
+    const response=await apiFetch(endpoint,{method:'POST',body}).then(r=>r.json());
+    console.log('[OCR Yaniti]:', response);
+    if(response.data) {
+      console.log('[OCR Okunan Metin]:\n', response.data.raw_text);
+      fillForm(document.querySelector(`#${formId}`),response.data,fields);
+    }
+    status.textContent=response.error?'Manuel giriş kullanılabilir':'Alanlar dolduruldu, kontrol edin';
+    toast(response.error||'OCR sonucu forma aktarıldı.');
+  } catch(e) {
+    console.error('OCR Hatası:', e);
+    status.textContent='OCR okunamadı';
+    toast('Görsel okunurken sunucu hatası oluştu.');
+  }
+  input.value='';
+}
 document.querySelector('#receipt-image').addEventListener('change',()=>runOcr('receipt-image','/api/ocr/receipt','receipt-form',receiptFields,'receipt-status'));
 document.querySelector('#z-image').addEventListener('change',()=>runOcr('z-image','/api/ocr/z-report','z-form',zFields,'z-status'));
 setupPreview('receipt-image','receipt-form','receipt-preview'); setupPreview('z-image','z-form','z-preview');
