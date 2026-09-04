@@ -26,7 +26,7 @@ Render için Python sürümünü `3.11.9` yapın. PaddlePaddle Linux paketleri P
 ## Railway kurulumu
 
 1. Railway'de **New Project > Deploy from GitHub Repo** seçin ve bu GitHub deposunu bağlayın.
-2. Railway ayarlarında Python sürümü `.python-version` dosyasından `3.11.9` olarak alınır.
+2. Runtime olarak `Python 3` seçin. Railway > Variables bölümüne `PYTHON_VERSION=3.11.9` ekleyin. Repo içinde `.python-version` ve `runtime.txt` dosyaları da bu sürümü belirtir.
 3. Build command olarak `pip install -r requirements-railway.txt` yazın.
 4. Start command olarak `gunicorn app:app --bind 0.0.0.0:$PORT` yazın.
 5. Firebase Console > Authentication > Settings > Authorized domains bölümüne Railway domainini ekleyin.
