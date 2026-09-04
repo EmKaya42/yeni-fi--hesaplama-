@@ -11,19 +11,29 @@ def _get_reader() -> tuple[Any, str]:
     global _reader, _engine
     if _reader is not None:
         return _reader, _engine
+
+    paddle_err = None
     try:
         from paddleocr import PaddleOCR
         _reader = PaddleOCR(lang="tr", use_doc_orientation_classify=False, use_doc_unwarping=False, use_textline_orientation=False)
         _engine = "PaddleOCR"
         return _reader, _engine
-    except Exception:
-        try:
-            import easyocr
-            _reader = easyocr.Reader(["tr", "en"], gpu=False, verbose=False)
-            _engine = "EasyOCR"
-            return _reader, _engine
-        except ImportError as error:
-            raise RuntimeError("PaddleOCR veya EasyOCR kurulu değil. 'pip install -r requirements.txt' komutunu çalıştırın.") from error
+    except Exception as err:
+        paddle_err = err
+
+    easy_err = None
+    try:
+        import easyocr
+        _reader = easyocr.Reader(["tr", "en"], gpu=False, verbose=False)
+        _engine = "EasyOCR"
+        return _reader, _engine
+    except Exception as err:
+        easy_err = err
+
+    raise RuntimeError(
+        f"OCR motorları yüklenemedi. "
+        f"[PaddleOCR hatası: {paddle_err}] | [EasyOCR hatası: {easy_err}]"
+    )
 
 
 def read_image(image_path: Path) -> tuple[str, str]:

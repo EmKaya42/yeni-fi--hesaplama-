@@ -1,0 +1,9 @@
+# Nixpacks configuration for Railway
+[phases.setup]
+nixPkgs = ["python311", "gcc", "glib", "libGL", "libGLU"]
+
+[phases.install]
+cmds = ["pip install -r requirements-railway.txt"]
+
+[start]
+cmd = "gunicorn app:app --bind 0.0.0.0:$PORT"
