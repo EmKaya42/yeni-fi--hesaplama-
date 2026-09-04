@@ -23,6 +23,17 @@ OCR ilk kullanımda model dosyalarını indirir. İnternet bağlantısı yoksa u
 
 Render için Python sürümünü `3.11.9` yapın. PaddlePaddle Linux paketleri Python 3.11 ile kullanılabilir; Python 3.13 seçilirse uygulama otomatik olarak EasyOCR'a düşer.
 
+## Railway kurulumu
+
+1. Railway'de **New Project > Deploy from GitHub Repo** seçin ve bu GitHub deposunu bağlayın.
+2. Railway ayarlarında Python sürümü `.python-version` dosyasından `3.11.9` olarak alınır.
+3. Build command olarak `pip install -r requirements-railway.txt` yazın.
+4. Start command olarak `gunicorn app:app --bind 0.0.0.0:$PORT` yazın.
+5. Firebase Console > Authentication > Settings > Authorized domains bölümüne Railway domainini ekleyin.
+6. SQLite veritabanının restart sonrası korunması için Railway'de Volume oluşturup `/app/data` yoluna bağlayın.
+
+Railway deploy'unda PaddleOCR ve EasyOCR çalışır. İlk OCR kullanımında model dosyaları indirileceği için ilk istek uzun sürebilir.
+
 Excel aktarımı; Fişler, Z Raporları, Aylık Özet, KDV Özeti ve Ödeme Özeti sayfalarını üretir.
 
 ## Firebase giriş ayarı
