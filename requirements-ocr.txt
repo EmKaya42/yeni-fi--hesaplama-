@@ -1,4 +1,4 @@
 # Optional local OCR dependencies. These are intentionally excluded from Vercel.
 easyocr>=1.7.2
 paddleocr>=3.0
-paddlepaddle>=3.0
+paddlepaddle>=3.0; python_version < "3.13"

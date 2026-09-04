@@ -21,6 +21,8 @@ py app.py
 
 OCR ilk kullanımda model dosyalarını indirir. İnternet bağlantısı yoksa uygulama anlaşılır bir uyarı gösterir; manuel giriş ve Excel aktarımı çalışmaya devam eder. Vercel deployment'ında function boyutunu aşmamak için ağır OCR paketleri yüklenmez; OCR kullanımı için uygulamayı yerel olarak `requirements-ocr.txt` ile çalıştırın veya harici bir OCR API bağlayın.
 
+Render için Python sürümünü `3.11.9` yapın. PaddlePaddle Linux paketleri Python 3.11 ile kullanılabilir; Python 3.13 seçilirse uygulama otomatik olarak EasyOCR'a düşer.
+
 Excel aktarımı; Fişler, Z Raporları, Aylık Özet, KDV Özeti ve Ödeme Özeti sayfalarını üretir.
 
 ## Firebase giriş ayarı
