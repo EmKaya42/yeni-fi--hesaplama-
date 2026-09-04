@@ -8,6 +8,7 @@ Flask, SQLite ve OpenPyXL tabanlı fiş/Z raporu takip uygulaması.
 py -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
+pip install -r requirements-ocr.txt
 py app.py
 ```
 
@@ -18,7 +19,7 @@ pip install -r requirements.txt
 py app.py
 ```
 
-OCR ilk kullanımda model dosyalarını indirir. İnternet bağlantısı yoksa uygulama anlaşılır bir uyarı gösterir; manuel giriş ve Excel aktarımı çalışmaya devam eder.
+OCR ilk kullanımda model dosyalarını indirir. İnternet bağlantısı yoksa uygulama anlaşılır bir uyarı gösterir; manuel giriş ve Excel aktarımı çalışmaya devam eder. Vercel deployment'ında function boyutunu aşmamak için ağır OCR paketleri yüklenmez; OCR kullanımı için uygulamayı yerel olarak `requirements-ocr.txt` ile çalıştırın veya harici bir OCR API bağlayın.
 
 Excel aktarımı; Fişler, Z Raporları, Aylık Özet, KDV Özeti ve Ödeme Özeti sayfalarını üretir.
 
