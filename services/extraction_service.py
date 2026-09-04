@@ -15,10 +15,12 @@ def normalize_digits(value: str) -> str:
 def normalize_money(value: str) -> str:
     if not value:
         return ""
-    cleaned = normalize_digits(value).replace(" ", "").replace("*", "").replace("₺", "").replace("TL", "")
-    m = re.search(r"(\d+)[.,](\d{2})", cleaned)
+    cleaned = normalize_digits(value).replace(" ", "").replace("*", "").replace("+", "").replace("£", "").replace("#", "").replace("₺", "").replace("TL", "")
+    # Ornek: 35.650,00 -> 35650.00 veya 145,50
+    m = re.search(r"(\d{1,3}(?:\.\d{3})*|\d+)[.,](\d{2})\b", cleaned)
     if m:
-        return f"{m.group(1)},{m.group(2)}"
+        main_part = m.group(1).replace(".", "")
+        return f"{main_part},{m.group(2)}"
     m2 = re.search(r"\d+", cleaned)
     return m2.group(0) if m2 else ""
 
@@ -44,7 +46,7 @@ def find_money(text: str, patterns: list[str]) -> str:
 
 
 def extract_datetime(text: str) -> str:
-    # Tarih yakalama: GG.AA.YYYY veya GG/AA/YYYY veya GG-AA-YYYY
+    # Tarih: GG/AA/YYYY veya GG.AA.YYYY veya GG-AA-YYYY
     date_match = re.search(r"\b([0-3]?\d)[\./\-]([0-1]?\d)[\./\-](20\d{2}|\d{2})\b", text)
     if not date_match:
         return ""
@@ -57,8 +59,8 @@ def extract_datetime(text: str) -> str:
     if not (1 <= day <= 31 and 1 <= month <= 12):
         return ""
 
-    # Saat yakalama: iki nokta (:) ile ayrilmis saat araniyor
-    time_match = re.search(r"\b([0-2]?\d)[:]([0-5]\d)\b", text)
+    # Saat: 04:21:42 veya 14:30
+    time_match = re.search(r"\b([0-2]?\d)[:]([0-5]\d)(?:[:][0-5]\d)?\b", text)
     if not time_match:
         time_match = re.search(r"(?:SAAT|TIME)\s*[:\.\-]?\s*([0-2]?\d)[:\.\-]([0-5]\d)", text, re.IGNORECASE)
 
@@ -69,15 +71,15 @@ def extract_datetime(text: str) -> str:
 def extract_receipt(text: str) -> dict[str, Any]:
     lines = [line.strip() for line in text.splitlines() if line.strip()]
 
-    # VKN / TCKN: 10 veya 11 haneli
+    # VKN / TCKN: 10 veya 11 hane
     tax_id = find_first(text, [
-        r"(?:VKN|TCKN|VERG[İI]\s*NO|TC\s*NO)\s*[:#=\-]?\s*([0-9]{10,11})",
+        r"(?:VKN|TCKN|VERG[İI]|TC)\s*[:#=\-]?\s*([0-9]{10,11})",
         r"\b([0-9]{10,11})\b"
     ])
 
     # Fiş No
     receipt_no = find_first(text, [
-        r"(?:F[İI]Ş|FIS|BELGE|RECEIPT)\s*(?:NO|N[O0]|NUMARASI)?\s*[:#=\-]?\s*([0-9]{3,8})",
+        r"(?:D?F[İI][ŞS]|FIS|BELGE|RECEIPT)\s*(?:NO|N[O0]|NUMARASI)?\s*[:#=\-]?\s*([0-9]{3,8})",
         r"\bNO\s*[:#=\-]?\s*([0-9]{3,8})\b"
     ])
 
@@ -86,41 +88,41 @@ def extract_receipt(text: str) -> dict[str, Any]:
         r"(?:FATURA|INVOICE)\s*(?:NO|N[O0]|NUMARASI)?\s*[:#=\-]?\s*([A-Z0-9\-]{6,16})",
     ])
 
-    # Tarih - Saat
     receipt_datetime = extract_datetime(text)
 
     # Toplam Tutar
     total_amount = find_money(text, [
-        r"(?:GENEL\s+TOPLAM|TOPLAM|TOTAL|ÖDENECEK|ODENECEK)[^\n\d]*?(\*?\s*\d+[\.,]\d{2})",
-        r"(?:GENEL\s+TOPLAM|TOPLAM|TOTAL|ÖDENECEK|ODENECEK)[^\n]*?\n[^\n\d]*?(\*?\s*\d+[\.,]\d{2})",
+        r"(?:GENEL\s+TOPLA[MN]|TOPLA[MN]|TOTAL|ÖDENECEK|ODENECEK)[^\n\d]*?(\*?[£#]?\s*\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2}))",
+        r"(?:GENEL\s+TOPLA[MN]|TOPLA[MN])[^\n]*?\n[^\n\d]*?(\*?[£#]?\s*\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2}))",
         r"(?:TL|₺)\s*(\d+[\.,]\d{2})",
     ])
 
     # KDV Oranı
     vat_rate = find_first(text, [
-        r"(?:KDV|VAT)\s*[%]?\s*(20|10|1)\b",
+        r"(?:K[OD]V|VAT)\s*[%]?\s*(20|10|1)\b",
         r"[%]\s*(20|10|1)\b",
     ])
 
     # KDV Tutarı
     vat_amount = find_money(text, [
-        r"(?:TOPKDV|TOPLAM\s+KDV|KDV\s+TUTARI|KDV)[^\n\d]*?(\*?\s*\d+[\.,]\d{2})",
-        r"(?:KDV\s*(?:%?\s*(?:20|10|1))?)[^\n]*?\n[^\n\d]*?(\*?\s*\d+[\.,]\d{2})",
+        r"(?:TOPK[OD]V|K[OD]V\s*TOPLAM[Iİ]|TOPLAM\s*K[OD]V|K[OD]V\s*TUTAR[Iİ])[^\n\d]*?(\*?[£#]?\s*\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2}))",
+        r"(?:K[OD]V\s*(?:%?\s*(?:20|10|1))?)[^\n]*?\n[^\n\d]*?(\*?[£#]?\s*\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2}))",
     ])
 
     # KDV Matrahı
     vat_base = find_money(text, [
-        r"(?:MATRAH|KDV\s+MATRAHI)[^\n\d]*?(\*?\s*\d+[\.,]\d{2})",
+        r"(?:MATRAH|K[OD]V\s*MATRAH[Iİ])[^\n\d]*?(\*?[£#]?\s*\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2}))",
     ])
 
-    # Ürün / Hizmet Adı
+    # Ürün / Firma Adı
     product_name = ""
-    ignore_patterns = r"TOPLAM|KDV|TARIH|TARİH|SAAT|FIS|FİŞ|VKN|TCKN|VERGI|VERGİ|MERSIS|MERSİS|ADRES|TEL|CAD|SOK|MAH|İSTANBUL|ANKARA|IZMIR|FATURA|BILGI|TEŞEKKÜR|TESIKKUR"
+    ignore_patterns = r"TOPLA[MN]|K[OD]V|TAR[İI]H|SAAT|F[İI][ŞS]|FIS|VKN|TCKN|VERG[İI]|MERS[İI]S|ADRES|TEL|CAD|SOK|MAH|İSTANBUL|ANKARA|IZMIR|FATURA|B[İI]LG[İI]|TEŞEKKÜR"
     for line in lines:
         if len(line) >= 3 and not re.search(ignore_patterns, line, re.IGNORECASE):
             if not re.fullmatch(r"[\d\s\.,\*\-\:\/]+", line):
-                product_name = re.sub(r"\s+\*?\d+[\.,]\d{2}.*$", "", line).strip()
-                if len(product_name) >= 3:
+                candidate = re.sub(r"\s+\*?\d+[\.,]\d{2}.*$", "", line).strip()
+                if len(candidate) >= 3:
+                    product_name = candidate
                     break
 
     return {
@@ -138,60 +140,82 @@ def extract_receipt(text: str) -> dict[str, Any]:
 
 
 def extract_z_report(text: str) -> dict[str, Any]:
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+
     # Z Rapor No
     report_no = find_first(text, [
-        r"(?:Z\s*RAPORU|RAPOR|Z\s*NO|U\s*NO)\s*(?:NO|NUMARASI)?\s*[:#=\-]?\s*([0-9]{3,8})",
+        r"(?:Z\s*NO|Z\s*RAPORU|[PR]APOR\s*(?:NO|110|IIO)|U\s*NO)\s*[:#=\-]?\s*([0-9]{3,8})",
+        r"\bZ\s*NO\s*[:#=\-]?\s*([0-9]{3,8})\b",
         r"\bZ\s*([0-9]{3,8})\b"
     ])
 
     # Tarih - Saat
     report_datetime = extract_datetime(text)
 
-    # Günlük Toplam Ciro
-    daily_turnover = find_money(text, [
-        r"(?:GÜNLÜK\s+TOPLAM\s+C[İI]RO|TOPLAM\s+C[İI]RO|GÜNLÜK\s+C[İI]RO)[^\n\d]*?(\*?\s*\d+[\.,]\d{2})",
-        r"(?:GENEL\s+TOPLAM|TOPLAM)[^\n\d]*?(\*?\s*\d+[\.,]\d{2})",
-        r"(?:GÜNLÜK\s+TOPLAM|C[İI]RO)[^\n]*?\n[^\n\d]*?(\*?\s*\d+[\.,]\d{2})",
+    # VKN / TCKN: 10 veya 11 hane
+    tax_id = find_first(text, [
+        r"(?:VKN|TCKN|VERG[İI]|TC)\s*[:#=\-]?\s*([0-9]{10,11})",
+        r"\b([0-9]{10,11})\b"
     ])
 
-    # İlk Fiş / Son Fiş No
+    # Günlük Toplam Ciro: Öncelik 'SATIŞ TOPLAMI' veya 'GÜNLÜK FİŞ DÖKÜMÜ TOPLAM'
+    daily_turnover = find_money(text, [
+        r"SATI[ŞS]\s*TOPLAM[Iİ][^\n\d]*?(\*?[£#]?\s*\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2}))",
+        r"G[ÜU]NL[ÜU]K\s*F[İI][ŞS]\s*D[ÖO]K[ÜU]M[ÜU][^\n]*\n\s*TOPLA[MN][^\n\d]*?(\*?[£#]?\s*\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2}))",
+        r"G[ÜU]NL[ÜU]K\s*TOPLAM\s*C[İI]RO[^\n\d]*?(\*?[£#]?\s*\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2}))",
+        r"GENEL\s+TOPLA[MN][^\n\d]*?(\*?[£#]?\s*\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2}))",
+    ])
+
+    # İlk / Son Fiş No
     first_receipt_no = find_first(text, [
-        r"(?:[İI]LK\s+F[İI]Ş|[İI]LK\s+FIS)\s*(?:NO)?\s*[:#=\-]?\s*([0-9]{1,8})",
+        r"(?:[İI]LK\s+F[İI][ŞS]|EK[ÜU],\s*NO|D?F[İI][ŞS]\s*NO)\s*[:#=\-]?\s*([0-9]{1,8})",
     ])
     last_receipt_no = find_first(text, [
-        r"(?:SON\s+F[İI]Ş|SON\s+FIS)\s*(?:NO)?\s*[:#=\-]?\s*([0-9]{1,8})",
+        r"(?:SON\s+F[İI][ŞS]|HAL[İI]\s*F[İI]S\s*ADET)\s*[:#=\-]?\s*([0-9]{1,8})",
     ])
 
     # KDV Dağılımı (%1, %10, %20)
-    vat1_base = find_money(text, [r"(?:%?\s*1\s+MATRAH|KDV\s*%?1\s+MATRAH)[^\n\d]*?(\*?\s*\d+[\.,]\d{2})"])
-    vat1_amount = find_money(text, [r"(?:%?\s*1\s+TUTAR|KDV\s*%?1\s+TUTAR)[^\n\d]*?(\*?\s*\d+[\.,]\d{2})"])
+    vat1_base = find_money(text, [r"(?:%?\s*1\s+MATRAH|K[OD]V\s*%?1\s+MATRAH)[^\n\d]*?(\*?[£#]?\s*\d+[\.,]\d{2})"])
+    vat1_amount = find_money(text, [r"(?:%?\s*1\s+TUTAR|K[OD]V\s*%?1\s+TUTAR)[^\n\d]*?(\*?[£#]?\s*\d+[\.,]\d{2})"])
 
-    vat10_base = find_money(text, [r"(?:%?\s*10\s+MATRAH|KDV\s*%?10\s+MATRAH)[^\n\d]*?(\*?\s*\d+[\.,]\d{2})"])
-    vat10_amount = find_money(text, [r"(?:%?\s*10\s+TUTAR|KDV\s*%?10\s+TUTAR)[^\n\d]*?(\*?\s*\d+[\.,]\d{2})"])
+    vat10_base = find_money(text, [r"(?:%?\s*10\s+MATRAH|K[OD]V\s*%?10\s+MATRAH)[^\n\d]*?(\*?[£#]?\s*\d+[\.,]\d{2})"])
+    vat10_amount = find_money(text, [r"(?:%?\s*10\s+TUTAR|K[OD]V\s*%?10\s+TUTAR)[^\n\d]*?(\*?[£#]?\s*\d+[\.,]\d{2})"])
 
-    vat20_base = find_money(text, [r"(?:%?\s*20\s+MATRAH|KDV\s*%?20\s+MATRAH)[^\n\d]*?(\*?\s*\d+[\.,]\d{2})"])
-    vat20_amount = find_money(text, [r"(?:%?\s*20\s+TUTAR|KDV\s*%?20\s+TUTAR)[^\n\d]*?(\*?\s*\d+[\.,]\d{2})"])
+    vat20_base = find_money(text, [
+        r"(?:%?\s*20\s+MATRAH|K[OD]V\s*%?20\s+MATRAH)[^\n\d]*?(\*?[£#]?\s*\d+[\.,]\d{2})",
+        r"B[İI]RA\s*%20[^\n]*\n[^\n]*TOPLA[MN][^\n\d]*?(\*?[£#]?\s*\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2}))"
+    ])
+    vat20_amount = find_money(text, [
+        r"(?:TOPK[OD]V|K[OD]V\s*TOPLAM[Iİ]|K[OD]V\s*%?20\s+TUTAR)[^\n\d]*?(\*?[£#]?\s*\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2}))",
+    ])
 
-    # Ödeme Türleri (Nakit, Kredi Kartı, vb.)
+    # Ödeme Türleri (Nakit, Kredi Kartı, Diğer)
     cash_amount = find_money(text, [
-        r"(?:NAK[İI]T|ILAKIT)[^\n\d]*?(\*?\s*\d+[\.,]\d{2})",
-        r"(?:NAK[İI]T|ILAKIT)[^\n]*?\n[^\n\d]*?(\*?\s*\d+[\.,]\d{2})",
+        r"[HN]AK[İI]T[^\n\d]*?(\*?[£#]?\s*\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2}))",
     ])
     card_amount = find_money(text, [
-        r"(?:KRED[İI]\s*KARTI|KRED[İI]|POS|BANKA\s*KARTI)[^\n\d]*?(\*?\s*\d+[\.,]\d{2})",
-        r"(?:KRED[İI]\s*KARTI|KRED[İI]|POS)[^\n]*?\n[^\n\d]*?(\*?\s*\d+[\.,]\d{2})",
+        r"KRED[İI][^\n\d]*?(\*?[£#]?\s*\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2}))",
+        r"POS[^\n\d]*?(\*?[£#]?\s*\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2}))",
     ])
     other_payment = find_money(text, [
-        r"(?:D[İI]ĞER\s+ÖDEME|D[İI]ĞER|DIGER)[^\n\d]*?(\*?\s*\d+[\.,]\d{2})",
+        r"D[İI][ĞG]ER[^\n\d]*?(\*?[£#]?\s*\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2}))",
     ])
     cancel_amount = find_money(text, [
-        r"(?:[İI]PTAL|IPTAL)[^\n\d]*?(\*?\s*\d+[\.,]\d{2})",
+        r"SAT[İI][ŞS]\s*[İI]PTAL\s*TUTAR[^\n\d]*?(\*?[£#]?\s*\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2}))",
+        r"[İI]PTAL\s*TUTAR[^\n\d]*?(\*?[£#]?\s*\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2}))",
     ])
-    refund_amount = find_money(text, [
-        r"(?:[İI]ADE|IADE)[^\n\d]*?(\*?\s*\d+[\.,]\d{2})",
-    ])
-    discount_amount = find_money(text, [
-        r"(?:[İI]SKONTO|ISKONTO|[İI]ND[İI]R[İI]M)[^\n\d]*?(\*?\s*\d+[\.,]\d{2})",
+    refund_amount = find_money(text, [r"[İI]ADE[^\n\d]*?(\*?[£#]?\s*\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2}))"])
+    discount_amount = find_money(text, [r"[İI]ND[İI]R[İI][KM]\s*TUTAR[^\n\d]*?(\*?[£#]?\s*\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2}))"])
+
+    # Departman / Ürün Adları
+    depts = re.findall(r"([A-ZÇĞİÖŞÜa-zçğıöşü\s]{3,25})\s*%\s*20", text)
+    products = [d.strip() for d in depts if not re.search(r"K[OD]V", d, re.I)]
+    product_name = " | ".join(dict.fromkeys(products)) if products else ""
+
+    # Fatura No (Yoksa Sicil no veya Eku no)
+    invoice_no = find_first(text, [
+        r"(?:T[İI]C\.?S[İI]C[İI]LNO|S[İI]C[İI]L\s*NO)\s*[:#=\-]?\s*([0-9]{4,10})",
+        r"(?:EK[ÜU],\s*NO|EKU\s*NO)\s*[:#=\-]?\s*([0-9]{3,8})"
     ])
 
     return {
@@ -212,8 +236,8 @@ def extract_z_report(text: str) -> dict[str, Any]:
         "cancel_amount": cancel_amount,
         "refund_amount": refund_amount,
         "discount_amount": discount_amount,
-        "product_name": "",
-        "tax_id": "",
-        "invoice_no": "",
+        "product_name": product_name,
+        "tax_id": tax_id,
+        "invoice_no": invoice_no,
         "raw_text": text,
     }
