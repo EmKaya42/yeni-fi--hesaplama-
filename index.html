@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ÇELİKEL-SMM | Yeni Nesil Masraf Yönetimi</title>
+  <style>
+    :root {
+      --bg-dark: #050507;
+      --bg-card: #0f1115;
+      --text-main: #ffffff;
+      --text-muted: #8892b0;
+      --accent-1: #00f2fe; 
+      --accent-2: #4facfe;
+      --accent-3: #6366f1; 
+      --accent-4: #8b5cf6;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      overflow-x: hidden;
+      line-height: 1.6;
+    }
+
+    /* MENÜ (GLASSMORPHISM) */
+    nav {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      padding: 20px 5%;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 1000;
+      background: rgba(5, 5, 7, 0.6);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .logo {
+      font-size: 26px;
+      font-weight: 800;
+      letter-spacing: -1px;
+      background: linear-gradient(to right, var(--accent-1), var(--accent-3));
+      background-clip: text;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .nav-btn {
+      background: white;
+      color: black;
+      border: none;
+      padding: 12px 28px;
+      border-radius: 30px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    .nav-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 20px rgba(255, 255, 255, 0.2);
+    }
+
+    /* GENEL YAPI VE GRID SİSTEMİ */
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 20px;
+    }
+
+    section {
+      padding: 120px 0;
+      position: relative;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 60px;
+      align-items: center;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 30px;
+    }
+
+    /* TİPOGRAFİ */
+    h1 { font-size: 4.5rem; font-weight: 800; line-height: 1.1; letter-spacing: -0.04em; margin-bottom: 24px; }
+    h2 { font-size: 3rem; font-weight: 700; line-height: 1.2; letter-spacing: -0.03em; margin-bottom: 20px; }
+    h3 { font-size: 1.5rem; margin-bottom: 15px; color: #fff; }
+    p { font-size: 1.15rem; color: var(--text-muted); margin-bottom: 30px; }
+
+    .gradient-text {
+      background: linear-gradient(135deg, var(--accent-1) 0%, var(--accent-3) 100%);
+      background-clip: text;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .tag {
+      display: inline-block;
+      padding: 6px 14px;
+      border-radius: 20px;
+      background: rgba(99, 102, 241, 0.1);
+      color: var(--accent-3);
+      font-size: 0.85rem;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      margin-bottom: 20px;
+      border: 1px solid rgba(99, 102, 241, 0.2);
+    }
+
+    /* BUTONLAR */
+    .cta-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, var(--accent-3), var(--accent-4));
+      color: white;
+      text-decoration: none;
+      padding: 18px 40px;
+      border-radius: 50px;
+      font-size: 1.1rem;
+      font-weight: 600;
+      box-shadow: 0 10px 30px rgba(99, 102, 241, 0.3);
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+      cursor: pointer;
+      border: none;
+    }
+    .cta-btn:hover { transform: translateY(-3px); box-shadow: 0 15px 40px rgba(99, 102, 241, 0.5); }
+
+    /* GÖRSELLER VE KARTLAR */
+    .image-wrapper {
+      position: relative;
+      border-radius: 24px;
+      overflow: hidden;
+      box-shadow: 0 30px 60px rgba(0,0,0,0.6);
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    .image-wrapper img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      transition: transform 0.5s ease;
+    }
+    .image-wrapper:hover img { transform: scale(1.05); }
+    
+    .feature-card {
+      background: var(--bg-card);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      padding: 40px 30px;
+      border-radius: 24px;
+      transition: transform 0.3s ease, background 0.3s ease;
+    }
+    .feature-card:hover {
+      transform: translateY(-10px);
+      background: rgba(255, 255, 255, 0.03);
+      border-color: rgba(255, 255, 255, 0.1);
+    }
+    .feature-icon {
+      width: 60px; height: 60px;
+      background: rgba(0, 242, 254, 0.1);
+      border-radius: 16px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 28px; margin-bottom: 24px;
+    }
+
+    /* ANİMASYONLAR (SCROLL REVEAL) */
+    .reveal { opacity: 0; transform: translateY(40px); transition: all 1s cubic-bezier(0.16, 1, 0.3, 1); }
+    .reveal-left { opacity: 0; transform: translateX(-60px); transition: all 1s cubic-bezier(0.16, 1, 0.3, 1); }
+    .reveal-right { opacity: 0; transform: translateX(60px); transition: all 1s cubic-bezier(0.16, 1, 0.3, 1); }
+    
+    .reveal.active, .reveal-left.active, .reveal-right.active {
+      opacity: 1; transform: translate(0);
+    }
+    .delay-1 { transition-delay: 0.2s; }
+    .delay-2 { transition-delay: 0.4s; }
+
+    /* ARKA PLAN EFEKTLERİ */
+    .glow-bg {
+      position: absolute; width: 600px; height: 600px; border-radius: 50%;
+      background: radial-gradient(circle, rgba(99, 102, 241, 0.15) 0%, rgba(0,0,0,0) 70%);
+      top: -100px; right: -100px; z-index: -1; filter: blur(60px);
+    }
+
+    /* BÜYÜK CTA ALANI */
+    .cta-section {
+      background: linear-gradient(rgba(5, 5, 7, 0.8), rgba(5, 5, 7, 0.95)), url('https://images.unsplash.com/photo-1550751827-4bd374c3f58b?auto=format&fit=crop&w=1600&q=80') center/cover;
+      text-align: center;
+      padding: 150px 20px;
+      border-top: 1px solid rgba(255,255,255,0.05);
+    }
+
+    /* MOBİL UYUM */
+    @media (max-width: 992px) {
+      .grid-2, .grid-3 { grid-template-columns: 1fr; gap: 40px; }
+      h1 { font-size: 3.5rem; }
+      h2 { font-size: 2.5rem; }
+      .reveal-left, .reveal-right { transform: translateY(40px); } /* Mobilde sağdan soldan gelmeyi iptal et, aşağıdan gelsin */
+      .image-wrapper { order: -1; } /* Mobilde görseller hep üstte görünsün */
+    }
+    .login-modal { position: fixed; inset: 0; z-index: 2000; display: grid; place-items: center; padding: 20px; background: rgba(0,0,0,.78); backdrop-filter: blur(12px); }
+    .login-modal[hidden] { display: none; }
+    .login-card { position: relative; width: min(100%, 440px); padding: 38px; border: 1px solid rgba(255,255,255,.12); border-radius: 22px; background: #101218; box-shadow: 0 30px 90px rgba(0,0,0,.55); }
+    .login-card h2 { font-size: 2.2rem; margin-bottom: 10px; }
+    .login-card p { font-size: 1rem; margin-bottom: 22px; }
+    .login-card label { display: block; color: #dce5f4; font-weight: 600; font-size: .9rem; margin: 14px 0; }
+    .login-card input { width: 100%; margin-top: 7px; padding: 13px 14px; border: 1px solid #303746; border-radius: 8px; background: #080a0f; color: #fff; font: inherit; outline: none; }
+    .login-card input:focus { border-color: var(--accent-1); box-shadow: 0 0 0 3px rgba(0,242,254,.12); }
+    .login-close { position: absolute; top: 14px; right: 16px; border: 0; background: transparent; color: #aeb9ca; font-size: 28px; cursor: pointer; }
+    .login-submit { width: 100%; margin-top: 14px; }
+    .auth-mode-toggle { display: block; margin: 16px auto 0; border: 0; background: transparent; color: var(--accent-1); cursor: pointer; font: inherit; font-size: .88rem; }
+    .login-card small { display: block; color: #8892a8; margin-top: 18px; line-height: 1.5; }
+    .login-error { min-height: 22px; color: #fb7185; font-size: .88rem; }
+    @media (max-width: 520px) { .login-card { padding: 28px 22px; } }
+  </style>
+</head>
+<body>
+
+  <!-- Üst Menü -->
+  <nav>
+    <div class="logo">ÇELİKEL-SMM</div>
+    <button class="nav-btn" onclick="openLogin()">Giriş Yap</button>
+  </nav>
+
+  <!-- HERO BÖLÜMÜ -->
+  <section style="padding-top: 180px; min-height: 100vh; display: flex; align-items: center;">
+    <div class="glow-bg"></div>
+    <div class="container grid-2">
+      <div class="reveal-left">
+        <div class="tag">Yeni Nesil Masraf Yönetimi</div>
+        <h1>Masrafları <span class="gradient-text">Yapay Zeka</span> İle Yönetin.</h1>
+        <p>Klasik fiş yapıştırma devri bitti. Fişinizin fotoğrafını çekin, PaddleOCR teknolojisi tutarı okusun, doğrulanmış TC kimliğinizle doğrudan kurumsal Excel formatında muhasebeye aktarın.</p>
+        <button class="cta-btn delay-1" onclick="openLogin()">Uygulamayı Başlat</button>
+      </div>
+      <div class="image-wrapper reveal-right">
+        <!-- Kaliteli Teknoloji / Dashboard Görseli -->
+        <img src="https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=1000&q=80" alt="ÇELİKEL-SMM Dashboard">
+      </div>
+    </div>
+  </section>
+
+  <!-- ÜÇLÜ ÖZELLİK KARTLARI -->
+  <section style="background: #090a0f;">
+    <div class="container">
+      <div class="reveal" style="text-align: center; margin-bottom: 60px;">
+        <h2>Neden ÇELİKEL - SMM?</h2>
+        <p style="max-width: 600px; margin: 0 auto;">Zaman alan manuel girişleri ortadan kaldırarak size ve muhasebe departmanınıza hız kazandırıyoruz.</p>
+      </div>
+      
+      <div class="grid-3">
+        <div class="feature-card reveal delay-1">
+          <div class="feature-icon" style="color: #00f2fe;">👁️</div>
+          <h3>PaddleOCR Okuyucu</h3>
+          <p>Yüklediğiniz fiş görsellerini gri tonlamaya çevirip kontrastı artırarak yapay zekanın %99 doğrulukla tutar ve tarihleri okumasını sağlarız.</p>
+        </div>
+        <div class="feature-card reveal delay-2">
+          <div class="feature-icon" style="color: #6366f1;">🛡️</div>
+          <h3>TCKN Doğrulama</h3>
+          <p>NVİ standartlarındaki 11 haneli matematiksel algoritma ile gerçek dışı veri girişini engeller, personel kimlik güvenliğini sağlarız.</p>
+        </div>
+        <div class="feature-card reveal delay-3">
+          <div class="feature-icon" style="color: #10b981;">📊</div>
+          <h3>Otomatik Excel Çıktısı</h3>
+          <p>Ay sonu geldiğinde, tek tuşla fiş ve Z Raporu verilerini Fişler, özet, KDV ve ödeme sayfalarıyla Excel çalışma kitabına aktarır.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SOL METİN / SAĞ GÖRSEL (AI DETAYI) -->
+  <section>
+    <div class="container grid-2">
+      <div class="reveal-left">
+        <div class="tag" style="color: #f43f5e; background: rgba(244, 63, 94, 0.1); border-color: rgba(244, 63, 94, 0.2);">Akıllı Tarama</div>
+        <h2>Saniye Saniye <br>OCR Teknolojisi.</h2>
+        <p>Her bir fişin sisteme girilmesi ortalama 2 dakika sürer. ÇELİKEL-SMM ile bu süre sadece 3 saniyedir. Uygulama, karmaşık yazıları analiz eder, KDV oranlarını ayırt eder ve doğrudan "Genel Toplam" değerini bularak ekranınıza yansıtır.</p>
+        <ul style="list-style: none; color: var(--text-muted); margin-bottom: 30px;">
+          <li style="margin-bottom: 10px;">✅ <b>Gerçek Zamanlı:</b> Yükler yüklemez tarama başlar.</li>
+          <li style="margin-bottom: 10px;">✅ <b>Manuel Kontrol:</b> Yanlış okumalarda anında düzeltme imkanı.</li>
+          <li>✅ <b>Limitsiz Arşiv:</b> Fiş görselleriniz bulutta güvenle saklanır.</li>
+        </ul>
+      </div>
+      <div class="image-wrapper reveal-right">
+        <!-- Telefon / Fiş Tarama Konsept Görseli -->
+        <img src="https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?auto=format&fit=crop&w=1000&q=80" alt="Yapay Zeka Tarama">
+      </div>
+    </div>
+  </section>
+
+  <!-- SOL GÖRSEL / SAĞ METİN (MUHASEBE DETAYI) -->
+  <section style="background: #090a0f;">
+    <div class="container grid-2">
+      <div class="image-wrapper reveal-left">
+        <!-- Excel / Finans / Muhasebe Görseli -->
+        <img src="https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=1000&q=80" alt="Muhasebe Raporlama">
+      </div>
+      <div class="reveal-right">
+        <div class="tag" style="color: #10b981; background: rgba(16, 185, 129, 0.1); border-color: rgba(16, 185, 129, 0.2);">Kurumsal Entegrasyon</div>
+        <h2>Muhasebenin <br>Sevdiği Format.</h2>
+        <p>Uygulamayı kullanırken "Tümünü Aktar" butonuna bastığınızda, aktif fişleriniz ekranınızdan temizlenerek arşivlenir. Ardından cihazınıza resmi bir "Personel Masraf Beyan Formu" indirilir.</p>
+        <p>Bu raporun en üstünde giriş yapan personelin <b>Adı, Soyadı ve doğrulanmış TC Kimlik Numarası</b> yer alır. Zımbalanmış fişlerle uğraşmaya son.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- BÜYÜK CTA (CALL TO ACTION) BÖLÜMÜ -->
+  <section class="cta-section reveal">
+    <div class="container">
+      <h2 style="font-size: 4rem; margin-bottom: 20px;">Hazır Mısın?</h2>
+      <p style="font-size: 1.3rem; max-width: 600px; margin: 0 auto 40px; color: #cbd5e1;">Şirketinin veya kendi kişisel masraflarının kontrolünü eline al. Firebase bulut altyapısıyla verilerini güvenle sakla ve işine odaklan.</p>
+      <button class="cta-btn" onclick="openLogin()" style="padding: 20px 50px; font-size: 1.2rem;">Hemen Başla</button>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer style="text-align: center; padding: 40px 20px; border-top: 1px solid rgba(255,255,255,0.05); color: #64748b; font-size: 0.9rem;">
+    <div class="container">
+      <div class="logo" style="font-size: 20px; margin-bottom: 15px;">ÇELİKEL-SMM</div>
+      <p>© 2024 ÇELİKEL-SMM. HTML5, CSS3, PaddleOCR ve Firebase ile güçlendirilmiştir.</p>
+    </div>
+  </footer>
+
+  <div id="login-modal" class="login-modal" hidden>
+    <div class="login-card" role="dialog" aria-modal="true" aria-labelledby="login-title">
+      <button class="login-close" type="button" onclick="closeLogin()" aria-label="Kapat">×</button>
+      <div class="tag">Güvenli personel girişi</div>
+      <h2 id="login-title">Uygulamaya giriş yap</h2>
+      <p id="login-description">TC kimlik numaranız ve Firebase hesabınızın şifresiyle devam edin.</p>
+      <form id="login-form">
+        <div id="register-fields" hidden>
+          <label>Ad<input id="register-name" autocomplete="given-name" placeholder="Adınız"></label>
+          <label>Soyad<input id="register-surname" autocomplete="family-name" placeholder="Soyadınız"></label>
+        </div>
+        <label>TC kimlik numarası<input id="login-tc" inputmode="numeric" maxlength="11" pattern="[0-9]{11}" required placeholder="11 haneli TC kimlik numarası"></label>
+        <label>Şifre<input id="login-password" type="password" minlength="6" required placeholder="Firebase hesap şifresi"></label>
+        <div id="login-error" class="login-error" role="alert"></div>
+        <button id="login-submit" class="cta-btn login-submit" type="submit">Giriş yap</button>
+      </form>
+      <button id="auth-mode-toggle" class="auth-mode-toggle" type="button">İlk kez kullanıyorum, kayıt ol</button>
+      <small>Firebase hesabı şu formatta oluşturulur: TC@celikel-smm.local</small>
+    </div>
+  </div>
+
+  <!-- SCROLL ANİMASYONU İÇİN JAVASCRIPT -->
+  <script>
+    // Sayfa kaydırıldıkça elementleri ekranda belirmesini sağlayan Observer
+    const observerOptions = {
+      root: null,
+      rootMargin: '0px',
+      threshold: 0.15 // Elementin %15'i göründüğünde animasyon başlar
+    };
+
+    const observer = new IntersectionObserver((entries, observer) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('active');
+          // Animasyon bir kere çalışsın istiyorsan alttaki satırı aktif bırakabilirsin:
+          // observer.unobserve(entry.target); 
+        }
+      });
+    }, observerOptions);
+
+    // Animasyon sınıflarına sahip tüm elementleri dinle
+    document.querySelectorAll('.reveal, .reveal-left, .reveal-right').forEach((el) => {
+      observer.observe(el);
+    });
+  </script>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
+    import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
+    import { firebaseConfig } from "./firebase-config.js";
+    const modal = document.querySelector("#login-modal");
+    const errorBox = document.querySelector("#login-error");
+    const registerFields = document.querySelector("#register-fields");
+    const authModeToggle = document.querySelector("#auth-mode-toggle");
+    let registerMode = false;
+    const firebaseReady = !firebaseConfig.apiKey.startsWith("BURAYA_");
+    const auth = firebaseReady ? getAuth(initializeApp(firebaseConfig)) : null;
+    const isValidTc = value => {
+      if (!/^\d{11}$/.test(value) || value[0] === "0" || /^([0-9])\1{10}$/.test(value)) return false;
+      const digits = [...value].map(Number);
+      const tenth = ((digits[0] + digits[2] + digits[4] + digits[6] + digits[8]) * 7 - (digits[1] + digits[3] + digits[5] + digits[7])) % 10;
+      const eleventh = digits.slice(0, 10).reduce((sum, digit) => sum + digit, 0) % 10;
+      return digits[9] === tenth && digits[10] === eleventh;
+    };
+    window.openLogin = () => { modal.hidden = false; document.querySelector("#login-tc").focus(); };
+    window.closeLogin = () => { modal.hidden = true; errorBox.textContent = ""; };
+    authModeToggle.addEventListener("click", () => {
+      registerMode = !registerMode;
+      registerFields.hidden = !registerMode;
+      document.querySelector("#login-title").textContent = registerMode ? "Yeni hesap oluştur" : "Uygulamaya giriş yap";
+      document.querySelector("#login-description").textContent = registerMode ? "Adınızı, soyadınızı ve TC kimliğinizi girerek hesap oluşturun." : "TC kimlik numaranız ve Firebase hesabınızın şifresiyle devam edin.";
+      document.querySelector("#login-submit").textContent = registerMode ? "Kayıt ol" : "Giriş yap";
+      authModeToggle.textContent = registerMode ? "Zaten hesabım var, giriş yap" : "İlk kez kullanıyorum, kayıt ol";
+      errorBox.textContent = "";
+    });
+    document.querySelector("#login-form").addEventListener("submit", async event => {
+      event.preventDefault();
+      const tc = document.querySelector("#login-tc").value.trim();
+      const password = document.querySelector("#login-password").value;
+      errorBox.textContent = "";
+      if (!isValidTc(tc)) { errorBox.textContent = "Geçerli bir T.C. Kimlik No girin."; return; }
+      if (!firebaseReady) { errorBox.textContent = "Firebase ayarları index.html dosyasına eklenmemiş."; return; }
+      try {
+        const email = `${tc}@celikel-smm.local`;
+        let credential;
+        if (registerMode) {
+          const name = document.querySelector("#register-name").value.trim();
+          const surname = document.querySelector("#register-surname").value.trim();
+          if (!name || !surname) { errorBox.textContent = "Ad ve soyad alanları zorunludur."; return; }
+          credential = await createUserWithEmailAndPassword(auth, email, password);
+          await updateProfile(credential.user, { displayName: `${name} ${surname}` });
+        } else {
+          credential = await signInWithEmailAndPassword(auth, email, password);
+        }
+        sessionStorage.setItem("firebase_uid", credential.user.uid);
+        window.location.href = "/app";
+      } catch (error) {
+        errorBox.textContent = error.code === "auth/email-already-in-use" ? "Bu TC ile kayıtlı bir hesap zaten var." : error.code === "auth/invalid-credential" ? "TC kimlik numarası veya şifre hatalı." : error.code === "auth/weak-password" ? "Şifre en az 6 karakter olmalıdır." : registerMode ? "Kayıt oluşturulamadı. Firebase ayarlarını kontrol edin." : "Giriş yapılamadı. Firebase ayarlarını kontrol edin.";
+      }
+    });
+  </script>
+
+</body>
+</html>

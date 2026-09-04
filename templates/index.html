@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fiş Takip Merkezi</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <style>
+    .topbar { gap: 24px; }
+    .export-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; max-width: 370px; }
+    .export-button { white-space: nowrap; }
+    @media (max-width: 620px) {
+      .topbar { align-items: flex-start; }
+      .export-actions { max-width: 165px; gap: 5px; }
+      .export-button { padding: 9px 10px; font-size: 11px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark">₺</span><div><strong>Fiş Takip</strong><small>Merkezi</small></div></div>
+      <nav>
+        <button class="nav-item active" data-view="dashboard"><span>◈</span> Genel Bakış</button>
+        <button class="nav-item" data-view="receipts"><span>▤</span> Fişler</button>
+        <button class="nav-item" data-view="z-reports"><span>▥</span> Z Raporları</button>
+      </nav>
+      <div class="sidebar-foot"><span class="status-dot"></span><span>Yerel veritabanı aktif</span></div>
+    </aside>
+    <main class="main-content">
+      <header class="topbar"><div><p class="eyebrow">FİNANSAL KAYITLAR</p><h1 id="page-title">Genel Bakış</h1></div><div class="export-actions"><a class="export-button receipt-export" href="/export/excel?type=receipts">↧ <span>Fiş Excel</span></a><a class="export-button z-export" href="/export/excel?type=z-reports">↧ <span>Z Raporu Excel</span></a><a class="export-button" href="/export/excel">↧ <span>Toplu Excel</span></a></div></header>
+      <section id="dashboard-view" class="view active-view">
+        <div class="welcome-row"><div><h2>Bugünün özeti</h2><p>Fiş ve Z raporu hareketlerini tek ekranda izleyin.</p></div><div class="date-chip" id="today"></div></div>
+        <div class="metric-grid">
+          <article class="metric-card accent"><div class="metric-top"><span>Bugünün cirosu</span><i>↗</i></div><strong id="daily-turnover">₺0,00</strong><small>Bugün kaydedilen hareketler</small></article>
+          <article class="metric-card"><div class="metric-top"><span>Aylık ciro</span><i>▥</i></div><strong id="monthly-turnover">₺0,00</strong><small>İçinde bulunulan ay</small></article>
+          <article class="metric-card"><div class="metric-top"><span>Toplam KDV</span><i>◒</i></div><strong id="total-vat">₺0,00</strong><small>Toplam hesaplanan KDV</small></article>
+          <article class="metric-card"><div class="metric-top"><span>Nakit</span><i>₺</i></div><strong id="total-cash">₺0,00</strong><small>Z raporlarından</small></article>
+          <article class="metric-card"><div class="metric-top"><span>Kredi kartı / POS</span><i>▣</i></div><strong id="total-card">₺0,00</strong><small>Z raporlarından</small></article>
+          <article class="metric-card"><div class="metric-top"><span>İade</span><i>↩</i></div><strong id="total-refund">₺0,00</strong><small>İade hareketleri</small></article>
+          <article class="metric-card"><div class="metric-top"><span>İskonto</span><i>−</i></div><strong id="total-discount">₺0,00</strong><small>Uygulanan indirimler</small></article>
+        </div>
+        <div class="split-grid"><section class="panel"><div class="panel-heading"><div><p class="eyebrow">KAYIT DURUMU</p><h3>Aktivite özeti</h3></div></div><div class="activity"><div><span class="activity-icon green">▤</span><div><b id="receipt-count">0 Fiş kaydı</b><small>Okutulan ve manuel eklenen fişler</small></div></div><div><span class="activity-icon orange">▥</span><div><b id="z-count">0 Z raporu</b><small>Gün sonu raporları</small></div></div></div></section><section class="panel quick-panel"><p class="eyebrow">HIZLI İŞLEM</p><h3>Yeni kayıt oluştur</h3><div class="quick-actions"><button data-view="receipts">+ Fiş ekle</button><button data-view="z-reports">+ Z raporu ekle</button></div></section></div>
+      </section>
+      <section id="receipts-view" class="view"><div class="section-intro"><div><p class="eyebrow">FİŞ YÖNETİMİ</p><h2>Fiş kayıtları</h2><p>Fotoğraftan alanları çıkarın, kaydetmeden önce kontrol edin.</p></div><label class="upload-button">▧ Fiş fotoğrafı okut<input type="file" id="receipt-image" accept="image/*" hidden></label></div><div class="entry-layout"><form id="receipt-form" class="panel data-form"><div class="form-head"><div><h3>Fiş bilgileri</h3><span>OCR sonucu düzenlenebilir</span></div><span class="ocr-status" id="receipt-status"></span></div><div class="form-grid"><label class="wide">Ürün / hizmet adı<input name="product_name" required placeholder="Örn. Kırtasiye malzemeleri"></label><label>VKN / TCKN<input name="tax_id" placeholder="10 veya 11 hane"></label><label>Fatura / belge no<input name="invoice_no"></label><label>Fiş no<input name="receipt_no"></label><label>Tarih - saat<input name="receipt_datetime" type="datetime-local"></label><label>KDV oranı (%)<input name="vat_rate" type="number" step="1" placeholder="20"></label><label>KDV matrahı<input name="vat_base" inputmode="decimal" placeholder="0,00"></label><label>KDV tutarı<input name="vat_amount" inputmode="decimal" placeholder="0,00"></label><label>Toplam tutar<input name="total_amount" required inputmode="decimal" placeholder="0,00"></label></div><button class="primary-button" type="submit">Fişi kaydet <span>→</span></button></form><section class="panel recent-panel"><div class="panel-heading"><div><p class="eyebrow">SON KAYITLAR</p><h3>Fişler</h3></div></div><div class="table-wrap"><table><thead><tr><th>Ürün / hizmet</th><th>Tarih</th><th>KDV</th><th>Toplam</th></tr></thead><tbody id="receipt-table"></tbody></table></div></section></div></section>
+      <section id="z-reports-view" class="view"><div class="section-intro"><div><p class="eyebrow">GÜN SONU KAPANIŞI</p><h2>Z Raporları</h2><p>Manuel girin veya rapor fotoğrafından alanları doldurun.</p></div><label class="upload-button orange">▧ Z raporu okut<input type="file" id="z-image" accept="image/*" hidden></label></div><form id="z-form" class="panel data-form"><div class="form-head"><div><h3>Z raporu bilgileri</h3><span>Kaydetmeden önce tüm alanları değiştirebilirsiniz</span></div><span class="ocr-status" id="z-status"></span></div><div class="form-grid"><label>Z raporu no<input name="report_no" required></label><label>Tarih - saat<input name="report_datetime" type="datetime-local"></label><label>Günlük toplam ciro<input name="daily_turnover" required inputmode="decimal"></label><label>İlk fiş no<input name="first_receipt_no"></label><label>Son fiş no<input name="last_receipt_no"></label><div class="form-divider">KDV dağılımı</div><label>%1 matrah<input name="vat1_base" inputmode="decimal"></label><label>%1 tutar<input name="vat1_amount" inputmode="decimal"></label><label>%10 matrah<input name="vat10_base" inputmode="decimal"></label><label>%10 tutar<input name="vat10_amount" inputmode="decimal"></label><label>%20 matrah<input name="vat20_base" inputmode="decimal"></label><label>%20 tutar<input name="vat20_amount" inputmode="decimal"></label><div class="form-divider">Ödeme ve düzeltmeler</div><label>Nakit<input name="cash_amount" inputmode="decimal"></label><label>Kredi kartı / POS<input name="card_amount" inputmode="decimal"></label><label>Diğer ödeme<input name="other_payment" inputmode="decimal"></label><label>İptal<input name="cancel_amount" inputmode="decimal"></label><label>İade<input name="refund_amount" inputmode="decimal"></label><label>İskonto<input name="discount_amount" inputmode="decimal"></label></div><button class="primary-button orange-button" type="submit">Z raporunu kaydet <span>→</span></button></form><section class="panel"><div class="panel-heading"><div><p class="eyebrow">ARŞİV</p><h3>Kaydedilen Z raporları</h3></div></div><div class="table-wrap"><table><thead><tr><th>Rapor no</th><th>Tarih</th><th>Ciro</th><th>Nakit</th><th>POS</th></tr></thead><tbody id="z-table"></tbody></table></div></section></section>
+    </main>
+  </div>
+  <div id="toast" class="toast"></div>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
