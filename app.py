@@ -14,8 +14,9 @@ from services.extraction_service import MISSING, extract_receipt, extract_z_repo
 from services.ocr_service import read_image
 
 BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = BASE_DIR / "data" / "fis_takip.db"
-UPLOAD_DIR = BASE_DIR / "data" / "uploads"
+RUNTIME_DIR = Path("/tmp/fis-takip") if os.getenv("VERCEL") else BASE_DIR / "data"
+DB_PATH = RUNTIME_DIR / "fis_takip.db"
+UPLOAD_DIR = RUNTIME_DIR / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 OCR_READER = None
 
@@ -312,7 +313,7 @@ def export_excel():
         sheet("Z Raporları", ["Tarih-Saat", "Ürün/Hizmet Adı", "VKN/TCKN", "Belge No", "KDV Oranı", "KDV Tutarı", "Ödeme Yöntemi", "Toplam Tutar"], z_rows, ["report_datetime", "product_name", "tax_id", "report_no", "vat_rate", "vat_amount", "payment_method", "daily_turnover"])
     if export_type != "all":
         filename = "normal_fisler.xlsx" if export_type == "receipts" else "z_raporlari.xlsx"
-        output = BASE_DIR / "data" / filename
+        output = RUNTIME_DIR / filename
         workbook.save(output)
         return send_file(output, as_attachment=True, download_name=filename)
     summary = workbook.create_sheet("Aylık Özet")
@@ -334,7 +335,7 @@ def export_excel():
     payment.append(["Nakit", sum((row["cash_amount"] or 0) for row in z_rows)])
     payment.append(["Kredi Kartı / POS", sum((row["card_amount"] or 0) for row in z_rows)])
     payment.append(["Diğer", sum((row["other_payment"] or 0) for row in z_rows)])
-    output = BASE_DIR / "data" / f"fis_raporu_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
+    output = RUNTIME_DIR / f"fis_raporu_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
     workbook.save(output)
     return send_file(output, as_attachment=True, download_name=output.name)
 
