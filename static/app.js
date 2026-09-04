@@ -6,7 +6,17 @@ const toast = message => { const el=document.querySelector('#toast'); el.textCon
 const navigate = view => { document.querySelectorAll('.view').forEach(el=>el.classList.remove('active-view')); document.querySelector(`#${view}-view`).classList.add('active-view'); document.querySelectorAll('.nav-item').forEach(el=>el.classList.toggle('active',el.dataset.view===view)); document.querySelector('#page-title').textContent=view==='dashboard'?'Genel Bakış':view==='receipts'?'Fiş Kayıtları':'Z Raporları'; if(view==='receipts') loadReceipts(); if(view==='z-reports') loadZReports(); };
 document.querySelectorAll('[data-view]').forEach(el=>el.addEventListener('click',()=>navigate(el.dataset.view)));
 document.querySelector('#today').textContent=new Intl.DateTimeFormat('tr-TR',{dateStyle:'long'}).format(new Date());
-const fillForm = (form, data, fields) => fields.forEach(field=>{ if(data[field]!==undefined && data[field]!==null) form.elements[field].value=data[field]; });
+const fillForm = (form, data, fields) => fields.forEach(field=>{
+  if(data[field]!==undefined && data[field]!==null) {
+    const el = form.elements[field];
+    if(!el) return;
+    if(el.type === 'datetime-local' && (data[field] === 'Bulunamadı' || !data[field])) {
+      el.value = '';
+    } else {
+      el.value = data[field] === 'Bulunamadı' ? '' : data[field];
+    }
+  }
+});
 const formData = (form, fields) => Object.fromEntries(fields.map(field=>[field,form.elements[field].value]));
 const apiFetch = (url, options={}) => fetch(url,{...options,headers:{...(options.headers||{}),'X-Firebase-UID':sessionStorage.getItem('firebase_uid')||'local-user'}});
 const downloadExcel = async type => { const response=await apiFetch(`/export/excel?type=${type}`); if(!response.ok)throw new Error('Excel export failed'); const blob=await response.blob(); const link=document.createElement('a'); link.href=URL.createObjectURL(blob); link.download=type==='receipts'?'normal_fisler.xlsx':type==='z-reports'?'z_raporlari.xlsx':'fis_raporu.xlsx'; link.click(); URL.revokeObjectURL(link.href); };
