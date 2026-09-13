@@ -236,7 +236,10 @@
   <!-- Üst Menü -->
   <nav>
     <div class="logo">ÇELİKEL-SMM</div>
-    <button class="nav-btn" onclick="openLogin()">Giriş Yap</button>
+    <div style="display: flex; gap: 10px; align-items: center;">
+      <a href="/app" class="nav-btn" style="text-decoration: none; display: inline-flex; align-items: center; background: rgba(255,255,255,0.12); color: #fff; border: 1px solid rgba(255,255,255,0.2);">Çalışma Alanı →</a>
+      <button class="nav-btn" onclick="openLogin()">Giriş Yap</button>
+    </div>
   </nav>
 
   <!-- HERO BÖLÜMÜ -->
@@ -247,7 +250,10 @@
         <div class="tag">Yeni Nesil Masraf Yönetimi</div>
         <h1>Masrafları <span class="gradient-text">Yapay Zeka</span> İle Yönetin.</h1>
         <p>Klasik fiş yapıştırma devri bitti. Fişinizin fotoğrafını çekin, PaddleOCR teknolojisi tutarı okusun, doğrulanmış TC kimliğinizle doğrudan kurumsal Excel formatında muhasebeye aktarın.</p>
-        <button class="cta-btn delay-1" onclick="openLogin()">Uygulamayı Başlat</button>
+        <div style="display: flex; gap: 16px; flex-wrap: wrap; margin-top: 10px;">
+          <a href="/app" class="cta-btn" style="text-decoration: none;">Uygulamayı Başlat →</a>
+          <button class="cta-btn delay-1" onclick="openLogin()" style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.2);">Personel Girişi</button>
+        </div>
       </div>
       <div class="image-wrapper reveal-right">
         <!-- Kaliteli Teknoloji / Dashboard Görseli -->
@@ -325,7 +331,10 @@
     <div class="container">
       <h2 style="font-size: 4rem; margin-bottom: 20px;">Hazır Mısın?</h2>
       <p style="font-size: 1.3rem; max-width: 600px; margin: 0 auto 40px; color: #cbd5e1;">Şirketinin veya kendi kişisel masraflarının kontrolünü eline al. Firebase bulut altyapısıyla verilerini güvenle sakla ve işine odaklan.</p>
-      <button class="cta-btn" onclick="openLogin()" style="padding: 20px 50px; font-size: 1.2rem;">Hemen Başla</button>
+      <div style="display: flex; gap: 16px; justify-content: center; flex-wrap: wrap;">
+        <a href="/app" class="cta-btn" style="text-decoration: none; padding: 20px 50px; font-size: 1.2rem;">Hemen Başla →</a>
+        <button class="cta-btn" onclick="openLogin()" style="padding: 20px 40px; font-size: 1.2rem; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.2);">Personel Girişi</button>
+      </div>
     </div>
   </section>
 
@@ -354,6 +363,7 @@
         <button id="login-submit" class="cta-btn login-submit" type="submit">Giriş yap</button>
       </form>
       <button id="auth-mode-toggle" class="auth-mode-toggle" type="button">İlk kez kullanıyorum, kayıt ol</button>
+      <a href="/app" style="display: block; text-align: center; margin-top: 14px; color: var(--accent-1); text-decoration: none; font-size: 0.9rem; font-weight: 600;">Doğrudan Çalışma Alanına Geç →</a>
       <small>Firebase hesabı şu formatta oluşturulur: TC@celikel-smm.local</small>
     </div>
   </div>
@@ -385,7 +395,7 @@
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
     import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
-    import { firebaseConfig } from "./firebase-config.js";
+    import { firebaseConfig } from "/firebase-config.js";
     const modal = document.querySelector("#login-modal");
     const errorBox = document.querySelector("#login-error");
     const registerFields = document.querySelector("#register-fields");

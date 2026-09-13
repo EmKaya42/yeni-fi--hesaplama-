@@ -1,2 +1,2 @@
 -r requirements.txt
-gunicorn>=23,<24
+pytest>=8,<9

@@ -3,52 +3,93 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Fiş Takip Merkezi</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <meta name="color-scheme" content="light">
+  <title>Çelikel SMM · Belge çalışma alanı</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-  <style>
-    .topbar { gap: 24px; }
-    .export-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; max-width: 370px; }
-    .export-button { white-space: nowrap; }
-    @media (max-width: 620px) {
-      .topbar { align-items: flex-start; }
-      .export-actions { max-width: 165px; gap: 5px; }
-      .export-button { padding: 9px 10px; font-size: 11px; }
-    }
-  </style>
 </head>
-<body>
-  <div class="app-shell">
+<body data-local-auth="{{ 'true' if local_auth else 'false' }}">
+  <section id="login-screen" class="login-screen">
+    <div class="login-brand"><span class="brand-mark">ç.</span><span>ÇELİKEL <b>SMM</b></span></div>
+    <form id="login-form" class="login-card">
+      <span class="eyebrow">MUHASEBE ÇALIŞMA ALANI</span>
+      <h1>Belgeleriniz, düzenli.</h1><p>Fiş ve Z raporlarınızı okuyun, kontrol edin ve muhasebe programınız için hazırlayın.</p>
+      <label>T.C. kimlik numarası<input id="login-tc" inputmode="numeric" maxlength="11" pattern="[0-9]{11}" autocomplete="username" required placeholder="11 haneli kimlik numarası"></label>
+      <label>Şifre<input id="login-password" type="password" minlength="6" autocomplete="current-password" required placeholder="Hesap şifreniz"></label>
+      <label id="name-field" hidden>Ad soyad<input id="login-name" autocomplete="name"></label>
+      <p id="login-error" class="error-text" role="alert"></p>
+      <button id="login-submit" class="button primary" type="submit">Giriş yap <span>→</span></button>
+      <button id="auth-toggle" class="text-button" type="button">İlk kez kullanıyorum · Hesap oluştur</button>
+    </form>
+    <p class="login-foot"><a href="/" style="color: inherit; text-decoration: underline;">← Ana sayfaya dön</a> · Çelikel SMM Belge yönetimi</p>
+  </section>
+  <div id="workspace" class="app-shell" hidden>
     <aside class="sidebar">
-      <div class="brand"><span class="brand-mark">₺</span><div><strong>Fiş Takip</strong><small>Merkezi</small></div></div>
-      <nav>
-        <button class="nav-item active" data-view="dashboard"><span>◈</span> Genel Bakış</button>
-        <button class="nav-item" data-view="receipts"><span>▤</span> Fişler</button>
-        <button class="nav-item" data-view="z-reports"><span>▥</span> Z Raporları</button>
+      <a href="/" class="brand" title="Ana sayfaya dön"><span class="brand-mark">ç.</span><span>ÇELİKEL <b>SMM</b><small>Belge çalışma alanı</small></span></a>
+      <p class="nav-label">BELGELER</p>
+      <nav aria-label="Belge türleri">
+        <button class="nav-item active" data-kind="receipts"><span class="nav-icon">▤</span> Fişler <span class="nav-arrow">→</span></button>
+        <button class="nav-item" data-kind="z-reports"><span class="nav-icon">▥</span> Z Raporları <span class="nav-arrow">→</span></button>
       </nav>
-      <div class="sidebar-foot"><span class="status-dot"></span><span>Yerel veritabanı aktif</span></div>
+      <div class="sidebar-bottom">
+        <button id="settings-button" class="profile-card"><span class="nav-label">MUHASEBE PROGRAMI</span><strong id="selected-program">Program seçin <span>↗</span></strong><small id="selected-template">Hesap planı ve Excel ayarları</small></button>
+        <div class="user-row"><span class="avatar" id="user-initial">M</span><span id="user-name">Muhasebe hesabı</span><button id="logout" class="icon-button" title="Çıkış yap" aria-label="Çıkış yap">↪</button></div>
+      </div>
     </aside>
-    <main class="main-content">
-      <header class="topbar"><div><p class="eyebrow">FİNANSAL KAYITLAR</p><h1 id="page-title">Genel Bakış</h1></div><div class="export-actions"><a class="export-button receipt-export" href="/export/excel?type=receipts">↧ <span>Fiş Excel</span></a><a class="export-button z-export" href="/export/excel?type=z-reports">↧ <span>Z Raporu Excel</span></a><a class="export-button" href="/export/excel">↧ <span>Toplu Excel</span></a></div></header>
-      <section id="dashboard-view" class="view active-view">
-        <div class="welcome-row"><div><h2>Bugünün özeti</h2><p>Fiş ve Z raporu hareketlerini tek ekranda izleyin.</p></div><div class="date-chip" id="today"></div></div>
-        <div class="metric-grid">
-          <article class="metric-card accent"><div class="metric-top"><span>Bugünün cirosu</span><i>↗</i></div><strong id="daily-turnover">₺0,00</strong><small>Bugün kaydedilen hareketler</small></article>
-          <article class="metric-card"><div class="metric-top"><span>Aylık ciro</span><i>▥</i></div><strong id="monthly-turnover">₺0,00</strong><small>İçinde bulunulan ay</small></article>
-          <article class="metric-card"><div class="metric-top"><span>Toplam KDV</span><i>◒</i></div><strong id="total-vat">₺0,00</strong><small>Toplam hesaplanan KDV</small></article>
-          <article class="metric-card"><div class="metric-top"><span>Nakit</span><i>₺</i></div><strong id="total-cash">₺0,00</strong><small>Z raporlarından</small></article>
-          <article class="metric-card"><div class="metric-top"><span>Kredi kartı / POS</span><i>▣</i></div><strong id="total-card">₺0,00</strong><small>Z raporlarından</small></article>
-          <article class="metric-card"><div class="metric-top"><span>İade</span><i>↩</i></div><strong id="total-refund">₺0,00</strong><small>İade hareketleri</small></article>
-          <article class="metric-card"><div class="metric-top"><span>İskonto</span><i>−</i></div><strong id="total-discount">₺0,00</strong><small>Uygulanan indirimler</small></article>
+    <main>
+      <header class="topbar"><span>Çalışma alanı <span class="muted">/</span> <b id="breadcrumb">Fişler</b></span><span id="today" class="muted"></span></header>
+      <div class="page-content">
+        <div class="page-heading"><div><p class="eyebrow">BELGE YÖNETİMİ</p><h1 id="page-title">Fişler</h1><p id="page-description">Belgeleri ekleyin. Okuma ve tutar kontrollerini tek yerden takip edin.</p></div>
+          <button id="export-button" class="button primary" disabled><span>↓</span><span id="export-label">Fiş Excel indir</span></button>
         </div>
-        <div class="split-grid"><section class="panel"><div class="panel-heading"><div><p class="eyebrow">KAYIT DURUMU</p><h3>Aktivite özeti</h3></div></div><div class="activity"><div><span class="activity-icon green">▤</span><div><b id="receipt-count">0 Fiş kaydı</b><small>Okutulan ve manuel eklenen fişler</small></div></div><div><span class="activity-icon orange">▥</span><div><b id="z-count">0 Z raporu</b><small>Gün sonu raporları</small></div></div></div></section><section class="panel quick-panel"><p class="eyebrow">HIZLI İŞLEM</p><h3>Yeni kayıt oluştur</h3><div class="quick-actions"><button data-view="receipts">+ Fiş ekle</button><button data-view="z-reports">+ Z raporu ekle</button></div></section></div>
-      </section>
-      <section id="receipts-view" class="view"><div class="section-intro"><div><p class="eyebrow">FİŞ YÖNETİMİ</p><h2>Fiş kayıtları</h2><p>Fotoğraftan alanları çıkarın, kaydetmeden önce kontrol edin.</p></div><label class="upload-button">▧ Fiş fotoğrafı okut<input type="file" id="receipt-image" accept="image/*" hidden></label></div><div class="entry-layout"><form id="receipt-form" class="panel data-form"><div class="form-head"><div><h3>Fiş bilgileri</h3><span>OCR sonucu düzenlenebilir</span></div><span class="ocr-status" id="receipt-status"></span></div><div class="form-grid"><label class="wide">Ürün / hizmet adı<input name="product_name" required placeholder="Örn. Kırtasiye malzemeleri"></label><label>VKN / TCKN<input name="tax_id" placeholder="10 veya 11 hane"></label><label>Fatura / belge no<input name="invoice_no"></label><label>Fiş no<input name="receipt_no"></label><label>Tarih - saat<input name="receipt_datetime" type="datetime-local"></label><label>KDV oranı (%)<input name="vat_rate" type="number" step="1" placeholder="20"></label><label>KDV matrahı<input name="vat_base" inputmode="decimal" placeholder="0,00"></label><label>KDV tutarı<input name="vat_amount" inputmode="decimal" placeholder="0,00"></label><label>Toplam tutar<input name="total_amount" required inputmode="decimal" placeholder="0,00"></label></div><button class="primary-button" type="submit">Fişi kaydet <span>→</span></button></form><section class="panel recent-panel"><div class="panel-heading"><div><p class="eyebrow">SON KAYITLAR</p><h3>Fişler</h3></div></div><div class="table-wrap"><table><thead><tr><th>Ürün / hizmet</th><th>Tarih</th><th>KDV</th><th>Toplam</th></tr></thead><tbody id="receipt-table"></tbody></table></div></section></div></section>
-      <section id="z-reports-view" class="view"><div class="section-intro"><div><p class="eyebrow">GÜN SONU KAPANIŞI</p><h2>Z Raporları</h2><p>Manuel girin veya rapor fotoğrafından alanları doldurun.</p></div><label class="upload-button orange">▧ Z raporu okut<input type="file" id="z-image" accept="image/*" hidden></label></div><form id="z-form" class="panel data-form"><div class="form-head"><div><h3>Z raporu bilgileri</h3><span>Kaydetmeden önce tüm alanları değiştirebilirsiniz</span></div><span class="ocr-status" id="z-status"></span></div><div class="form-grid"><label>Z raporu no<input name="report_no" required></label><label>Tarih - saat<input name="report_datetime" type="datetime-local"></label><label>Günlük toplam ciro<input name="daily_turnover" required inputmode="decimal"></label><label>İlk fiş no<input name="first_receipt_no"></label><label>Son fiş no<input name="last_receipt_no"></label><div class="form-divider">KDV dağılımı</div><label>%1 matrah<input name="vat1_base" inputmode="decimal"></label><label>%1 tutar<input name="vat1_amount" inputmode="decimal"></label><label>%10 matrah<input name="vat10_base" inputmode="decimal"></label><label>%10 tutar<input name="vat10_amount" inputmode="decimal"></label><label>%20 matrah<input name="vat20_base" inputmode="decimal"></label><label>%20 tutar<input name="vat20_amount" inputmode="decimal"></label><div class="form-divider">Ödeme ve düzeltmeler</div><label>Nakit<input name="cash_amount" inputmode="decimal"></label><label>Kredi kartı / POS<input name="card_amount" inputmode="decimal"></label><label>Diğer ödeme<input name="other_payment" inputmode="decimal"></label><label>İptal<input name="cancel_amount" inputmode="decimal"></label><label>İade<input name="refund_amount" inputmode="decimal"></label><label>İskonto<input name="discount_amount" inputmode="decimal"></label></div><button class="primary-button orange-button" type="submit">Z raporunu kaydet <span>→</span></button></form><section class="panel"><div class="panel-heading"><div><p class="eyebrow">ARŞİV</p><h3>Kaydedilen Z raporları</h3></div></div><div class="table-wrap"><table><thead><tr><th>Rapor no</th><th>Tarih</th><th>Ciro</th><th>Nakit</th><th>POS</th></tr></thead><tbody id="z-table"></tbody></table></div></section></section>
+        <div id="setup-banner" class="notice" hidden>Başlamak için muhasebe programınızı seçin. Hesap kodları otomatik yüklenecek. <button id="setup-open" class="text-button">Programı seç →</button></div>
+        <section class="context-bar" aria-label="Firma ve dönem"><label>Firma hesap planı<select id="workspace-chart"><option value="">Standart hesaplar / önceki belgeler</option></select></label><label>Dönem<select id="period-filter"><option value="">Tüm dönemler</option></select></label><span id="export-history-caption" class="muted"></span></section>
+        <section class="upload-panel" id="dropzone" aria-label="Belge yükleme alanı">
+          <div class="upload-symbol" aria-hidden="true">↥</div>
+          <div class="upload-copy"><h2 id="upload-title">Fişlerinizi buraya bırakın</h2><p>50, 100 veya daha fazla dosyayı birlikte ekleyebilirsiniz.</p><small>JPG, PNG, WEBP, TIFF, BMP, PDF · Dosya başına en fazla 20 MB · Her PDF sayfası ayrı belge</small></div>
+          <div class="upload-controls"><label id="direction-label">Kayıt türü<select id="direction"><option value="expense">Gider fişi</option><option value="income">Gelir fişi</option></select></label><button id="choose-files" class="button secondary">＋ Dosya ekle</button></div>
+          <input id="document-files" type="file" accept=".jpg,.jpeg,.png,.webp,.tif,.tiff,.bmp,.pdf" multiple hidden>
+        </section>
+        <div id="upload-progress" class="upload-progress" hidden><span id="upload-message" role="status"></span><progress id="upload-meter" max="100" value="0"></progress></div>
+        <section id="upload-errors" class="notice error-notice" hidden><div><b>Yüklenemeyen dosyalar</b><ul id="upload-error-list"></ul></div><button id="retry-uploads" class="button secondary">Yüklemeyi yeniden dene</button></section>
+        <section class="metrics" aria-label="Belge durumları">
+          <div><span>Toplam belge</span><strong id="count-total">0</strong></div>
+          <div><span><i class="dot green"></i>Kontrolleri geçti</span><strong id="count-success">0</strong></div>
+          <div><span><i class="dot amber"></i>İnceleme / yeniden deneme</span><strong id="count-review">0</strong></div>
+          <div><span><i class="dot blue"></i>Sırada / okunuyor</span><strong id="count-pending">0</strong></div>
+        </section>
+        <section class="records-panel">
+          <div class="records-toolbar"><div><h2>Belgeler <span id="result-count" class="count-pill">0</span></h2><span id="queue-caption" class="muted">Dosyalar sırayla okunur.</span></div><div class="filters"><input id="search" type="search" placeholder="Dosya adı ara…" aria-label="Dosya adı ara"><select id="status-filter" aria-label="Belge durumu"><option value="">Tüm durumlar</option><option value="success">Kontrolleri geçti</option><option value="review">İnceleme gerekli</option><option value="mapping">Hesap eşleşmesi gerekli</option><option value="failed">Okunamadı</option><option value="queued">Sırada</option><option value="processing">Okunuyor</option><option value="duplicate">Mükerrer</option></select></div></div>
+          <div class="table-wrap"><table class="document-table"><thead><tr><th>Dosya / belge no</th><th>Firma / tarih</th><th>KDV</th><th>Toplam</th><th>Durum</th><th class="right">İşlem</th></tr></thead><tbody id="document-table"></tbody></table></div>
+          <div id="empty-state" class="empty-state"><span class="empty-icon">▤</span><h3>İlk belgenizi ekleyin</h3><p>Yüklenen belgeler ve okuma sonuçları burada görünür.</p></div>
+          <div class="table-footer"><span id="pagination-label">0 belge</span><div><button id="previous-page" class="icon-button" aria-label="Önceki sayfa">←</button><button id="next-page" class="icon-button" aria-label="Sonraki sayfa">→</button></div></div>
+        </section>
+        <div class="workspace-note"><span>ⓘ</span><p>Tik, iki okumanın ve zorunlu alan / tutar kontrollerinin geçtiğini gösterir. İnceleme bekleyen, okunamayan ve mükerrer belgeler Excel’e alınmaz. Muhasebe aktarımından önce kaynak belgeyi kontrol edin.</p></div>
+        <details id="legacy-section" class="legacy-section" hidden><summary>Önceki sürümden kalan kayıtlar <span id="legacy-count"></span></summary><p>Bu kayıtlar korunmuştur. Yeni okuma kontrollerinden geçmeleri için kaynak belgelerini tekrar yükleyin.</p><div class="table-wrap"><table><thead><tr><th>Belge no</th><th>Firma</th><th>Tarih</th><th>Önceki tutar</th></tr></thead><tbody id="legacy-table"></tbody></table></div></details>
+        <footer class="page-footer"><span>ÇELİKEL SMM</span><span>Fiş ve Z raporu çalışma alanı</span></footer>
+      </div>
     </main>
   </div>
-  <div id="toast" class="toast"></div>
-  <script src="{{ url_for('static', filename='app.js') }}"></script>
+  <dialog id="settings-dialog" class="settings-dialog">
+    <div class="dialog-heading"><div><span class="eyebrow">ÇALIŞMA ALANI AYARLARI</span><h2>Muhasebe programı</h2></div><button class="icon-button" data-close="settings-dialog" aria-label="Ayarları kapat">×</button></div>
+    <form id="settings-form">
+      <p>Programınızı seçin; gelir, gider, KDV ve ödeme hesap kodları otomatik gelsin. Kod yazmanız gerekmez.</p>
+      <div class="form-grid"><label>Program<select id="program-select" required><option value="">Program seçin</option></select></label><label>Sürüm / ürün<input id="program-version" placeholder="Örn. Müşavir, GO 3, V16"></label></div>
+      <section class="chart-import"><h3>Firma hesap planı ve banka hesapları</h3><p>Muhasebe programından aldığınız hesap planını bir kez yükleyin. Hesap kodları, banka, kart ve KDV hesapları dosyadan otomatik alınır. Her firmanın belgeleri ayrı tutulur.</p><label>Çalışılacak firma<select id="company-plan-select"><option value="">Standart hesaplar / önceki belgeler</option></select></label><div class="chart-actions"><button type="button" id="new-chart" class="button secondary">＋ Firma hesap planı yükle</button><button type="button" id="update-chart" class="text-button" hidden>Seçili planı güncelle</button></div><input type="file" id="chart-file" accept=".xls,.xlsx,.csv" hidden><p id="chart-status" class="muted" role="status">XLS, XLSX veya CSV · Hesap Kodu ve Hesap Adı başlıkları yeterlidir. IBAN, Banka Kodu ve Kart Son 4 Hane sütunları eşleştirmeyi kesinleştirir.</p></section>
+      <section id="automatic-accounts" aria-labelledby="accounts-title" hidden><div class="accounts-heading"><h3 id="accounts-title">Otomatik hesap kodları</h3><span class="badge badge-success">✓ Hazır</span></div><p id="account-plan-name" class="muted"></p><dl id="account-list" class="account-list"></dl><p id="account-plan-explanation" class="muted">Standart ana hesaplar kullanılır. Firmanın alt hesaplarını almak için hesap planını yükleyin.</p></section>
+      <details class="bank-directory"><summary>Hazır banka kodları <span id="bank-count"></span></summary><p class="muted">TCMB banka/EFT kimlik kodlarıdır. Muhasebe alt hesapları firmanın yüklediği hesap planından gelir.</p><dl id="bank-catalog"></dl><a id="bank-source" target="_blank" rel="noreferrer">TCMB kaynak listesi ↗</a></details>
+      <p id="account-selection-hint" class="muted">Program seçtiğinizde kullanılacak hesap kodları burada görünür.</p>
+      <p class="muted">Fiş ve Z raporu Excel’leri ayrı örnek düzenlerinde hazırdır. Fişte Açıklama sütununa okunan ürün adları yazılır.</p>
+      <details class="template-settings"><summary>Programın Excel şablonu <span id="template-badge">İsteğe bağlı</span></summary><p>Farklı bir aktarım düzeni için programınızdan aldığınız .xls veya .xlsx şablonunu seçin. Tanınan başlıklar otomatik eşleştirilir. Şablon yalnız seçtiğiniz belge türünde kullanılır.</p><p class="muted">Başlıklar, sütun sırası ve başlangıç satırı kullanılır. Örnek kayıtlar ve makrolar aktarılmaz; ilk dosyayı programınızda deneme olarak kontrol edin.</p>
+        <label class="button secondary template-upload">↥ Excel şablonu seç<input id="template-file" type="file" accept=".xls,.xlsx" hidden></label><span id="template-filename" class="muted"></span>
+        <div id="template-options" hidden><label>Şablonun belge türü<select id="template-kind"><option value="receipts">Fiş</option><option value="z-reports">Z raporu</option></select></label>
+        <div class="form-grid"><label>Sayfa adı<input id="sheet-name" value="Muhasebe Fişleri" maxlength="31"></label><label>Başlık satırı<input id="header-row" type="number" min="1" max="20" value="1"></label><label>Tarih biçimi<select id="date-format"><option value="dd.mm.yyyy">GG.AA.YYYY</option><option value="yyyy-mm-dd">YYYY-AA-GG</option><option value="dd/mm/yyyy">GG/AA/YYYY</option></select></label></div>
+        </div><div class="mapping-table" id="mapping-table" hidden></div><button id="reset-template" type="button" class="text-button" hidden>Örnek düzenine dön</button>
+      </details>
+      <p id="settings-error" class="error-text" role="alert"></p><div class="dialog-actions"><button class="button primary" type="submit">Ayarları kaydet →</button></div>
+    </form>
+  </dialog>
+  <dialog id="detail-dialog" class="detail-dialog"><div class="dialog-heading"><div><span class="eyebrow">BELGE İNCELEME</span><h2 id="detail-title">Belge</h2></div><button class="icon-button" data-close="detail-dialog" aria-label="Belgeyi kapat">×</button></div><div id="detail-body"></div></dialog>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>
