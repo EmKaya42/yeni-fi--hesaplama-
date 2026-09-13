@@ -3,7 +3,7 @@ builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "gunicorn -c gunicorn.conf.py app:app"
+startCommand = "python entrypoint.py gunicorn -c gunicorn.conf.py app:app"
 healthcheckPath = "/"
 healthcheckTimeout = 120
 restartPolicyType = "ON_FAILURE"

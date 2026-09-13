@@ -7,4 +7,5 @@ RUN pip install --no-cache-dir -r requirements-railway.txt
 COPY . .
 RUN mkdir -p /app/data/uploads
 EXPOSE 5000 8080
+ENTRYPOINT ["python", "entrypoint.py"]
 CMD ["gunicorn", "-c", "gunicorn.conf.py", "app:app"]
