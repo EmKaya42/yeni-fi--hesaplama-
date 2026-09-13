@@ -6,4 +6,4 @@ COPY requirements.txt requirements-railway.txt ./
 RUN pip install --no-cache-dir -r requirements-railway.txt
 COPY . .
 RUN mkdir -p /app/data/uploads
-CMD ["sh", "-c", "exec gunicorn app:app --bind 0.0.0.0:${PORT:-5000} --workers 1 --threads 4 --timeout 120 --graceful-timeout 30 --access-logfile -"]
+CMD ["gunicorn", "-c", "gunicorn.conf.py", "app:app"]
