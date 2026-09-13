@@ -5,6 +5,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends tesseract-ocr t
 COPY requirements.txt requirements-railway.txt ./
 RUN pip install --no-cache-dir -r requirements-railway.txt
 COPY . .
+RUN python patch_gunicorn.py
 RUN mkdir -p /app/data/uploads
 EXPOSE 5000 8080
 ENTRYPOINT ["python", "entrypoint.py"]

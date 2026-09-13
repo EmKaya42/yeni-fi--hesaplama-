@@ -1,0 +1,11 @@
+[phases.setup]
+nixPkgs = ["tesseract", "tesseract-data-tur"]
+
+[phases.install]
+cmds = [
+    "pip install -r requirements-railway.txt",
+    "python patch_gunicorn.py"
+]
+
+[start]
+cmd = "python entrypoint.py gunicorn -c gunicorn.conf.py app:app"
