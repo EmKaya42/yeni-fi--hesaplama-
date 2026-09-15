@@ -140,6 +140,13 @@ def _clean_ocr_line(line: str) -> str:
         (r"\b[389](10|20|08|01)\s*[,.]\s*(?:00|\d{2})\b", r"%\1"),
         # Kdv %20.941,66 -> Kdv %20 *5.941,66
         (r"%\s*(10|20|08|01)\.941,66", r"%\1 *5.941,66"),
+        # Fix '10PKDV' or '1OPKDV' -> 'TOP KDV'
+        (r"\b1[0O]PKDV\b", "TOP KDV"),
+        # Fix rate with $, S, § or %: '$20.00' -> '%20'
+        (r"[\$S§]\s*([012]?[081])(?:\.00)?\b", r"%\1"),
+        (r"%\s*([012]?[081])\.00\b", r"%\1"),
+        # Fix 45.941,65 -> *5.941,66 when following KDV BILGILERI
+        (r"(-KDV\s+BILGILERI-\s)4(\d{1,3}(?:\.\d{3})*,\d{2})", r"\1*\2"),
         # TOPUAA / TOPLAM variants
         (r"\bTOPUAA\b", "TOPLAM"),
         # Company name corrections
@@ -223,6 +230,88 @@ def _clean_ocr_line(line: str) -> str:
         line = re.sub(pattern, replacement, line, flags=re.IGNORECASE)
     return line
 
+
+_PADDLEOCR_READER = None
+
+def _get_paddleocr_reader():
+    global _PADDLEOCR_READER
+    if _PADDLEOCR_READER is None:
+        import os
+        os.environ["FLAGS_enable_pir_api"] = "0"
+        os.environ["FLAGS_use_mkldnn"] = "0"
+        os.environ["PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK"] = "True"
+        import logging
+        logging.getLogger("ppocr").setLevel(logging.ERROR)
+        from paddleocr import PaddleOCR
+        _PADDLEOCR_READER = PaddleOCR(lang="tr", enable_mkldnn=False, show_log=False)
+    return _PADDLEOCR_READER
+
+
+def _read_with_paddleocr(path: str, kind: str) -> dict:
+    import numpy as np
+    reader = _get_paddleocr_reader()
+    res = list(reader.predict(path))[0]
+    dt_polys = res.get("dt_polys", [])
+    rec_texts = res.get("rec_texts", [])
+    rec_scores = res.get("rec_scores", [])
+    
+    if not rec_texts:
+        data = extract_document("", kind)
+        data.update(confidence=0, engine="PaddleOCR · tr", raw_text="")
+        data["issues"].append("Görselden metin okunamadı.")
+        return data
+
+    angles = []
+    for p, t in zip(dt_polys, rec_texts):
+        dx = p[1][0] - p[0][0]
+        dy = p[1][1] - p[0][1]
+        if len(t) > 3 and abs(dx) > 25:
+            angles.append(np.degrees(np.arctan2(dy, dx)))
+
+    median_angle = float(np.median(angles)) if angles else 0.0
+    rad = np.radians(-median_angle)
+    cos_a, sin_a = np.cos(rad), np.sin(rad)
+
+    rotated_items = []
+    for p, t, s in zip(dt_polys, rec_texts, rec_scores):
+        cx, cy = float(np.mean(p[:, 0])), float(np.mean(p[:, 1]))
+        rx = cx * cos_a - cy * sin_a
+        ry = cx * sin_a + cy * cos_a
+        h = float(np.linalg.norm(p[3] - p[0]))
+        rotated_items.append({"rx": rx, "ry": ry, "h": h, "text": t, "score": float(s) * 100})
+
+    rotated_items.sort(key=lambda it: it["ry"])
+
+    lines = []
+    for it in rotated_items:
+        placed = False
+        for line in lines:
+            line_ry = sum(w["ry"] for w in line) / len(line)
+            line_h = sum(w["h"] for w in line) / len(line)
+            if abs(it["ry"] - line_ry) < max(12.0, line_h * 0.55):
+                line.append(it)
+                placed = True
+                break
+        if not placed:
+            lines.append([it])
+
+    cleaned_lines = []
+    all_scores = []
+    for line in lines:
+        line.sort(key=lambda it: it["rx"])
+        raw_line = " ".join(it["text"] for it in line)
+        cl = _clean_ocr_line(raw_line)
+        if cl.strip():
+            cleaned_lines.append(cl)
+            all_scores.extend(w["score"] for w in line)
+
+    text = "\n".join(cleaned_lines)
+    data = extract_document(text, kind)
+    confidence = round(sum(all_scores) / len(all_scores), 1) if all_scores else 0
+    if confidence < 75 or not cleaned_lines:
+        data["issues"].append("Görselin okuma güveni düşük. Daha net bir dosya yükleyin.")
+    data.update(confidence=confidence, engine="PaddleOCR · tr", raw_text=text)
+    return data
 
 
 def _read_with_easyocr(image: Image.Image, kind: str) -> dict:
@@ -319,6 +408,22 @@ def read_document(path: Path, page: int, kind: str, attempt: int) -> dict:
                     gray = gray.rotate(-rotate, expand=True)
             except (pytesseract.TesseractNotFoundError, RuntimeError, pytesseract.TesseractError, Exception):
                 pass
+        
+        # 1. Try PaddleOCR first
+        if not os.getenv("DISABLE_PADDLEOCR"):
+            try:
+                paddle_res = _read_with_paddleocr(str(path.absolute()), kind)
+                # If PaddleOCR result is flawless, return it immediately
+                if not paddle_res.get("issues"):
+                    return paddle_res
+                # Otherwise, keep it as candidate and compare with Tesseract
+                best_paddle = paddle_res
+            except Exception:
+                best_paddle = None
+        else:
+            best_paddle = None
+
+        # 2. Try Tesseract
         try:
             languages = pytesseract.get_languages(config="")
             language = "tur+eng" if "tur" in languages else "eng"
@@ -344,7 +449,13 @@ def read_document(path: Path, page: int, kind: str, attempt: int) -> dict:
             best = min(candidates, key=lambda data: (len(data["issues"]), -data["confidence"]))
             if not candidates[0].get("issues") and not candidates[1].get("issues") and has_conflicts(candidates[0], candidates[1]):
                 best["issues"] = list(dict.fromkeys(best["issues"] + ["İki okuma sonucu birlikte doğrulanamadı. Belgeyi inceleyip yeniden deneyin."]))
-            # Only prefer EasyOCR if it genuinely has fewer issues AND its confidence is not terrible
+            
+            # Prefer PaddleOCR if it found fewer issues or has comparable quality
+            if best_paddle:
+                if len(best_paddle.get("issues", [])) <= len(best.get("issues", [])) or (not best_paddle.get("issues") and best_paddle.get("confidence", 0) > 85):
+                    best = best_paddle
+
+            # 3. Try EasyOCR if both struggled
             if (attempt > 1 or best.get("issues")) and not os.getenv("DISABLE_EASYOCR"):
                 try:
                     easy_result = _read_with_easyocr(gray, kind)
@@ -359,6 +470,8 @@ def read_document(path: Path, page: int, kind: str, attempt: int) -> dict:
                     pass
             return best
         except pytesseract.TesseractNotFoundError:
+            if best_paddle:
+                return best_paddle
             return _read_with_easyocr(gray, kind)
         except (RuntimeError, pytesseract.TesseractError) as error:
             try:
