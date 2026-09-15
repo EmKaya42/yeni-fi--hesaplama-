@@ -310,14 +310,12 @@ def read_document(path: Path, page: int, kind: str, attempt: int) -> dict:
             gray = gray.resize((int(gray.width * scale), int(gray.height * scale)), Image.Resampling.LANCZOS)
             gray = ImageEnhance.Sharpness(gray).enhance(1.4)
             gray = ImageEnhance.Contrast(gray).enhance(1.3)
-        if attempt > 1:
+        if attempt > 1 and gray.width > gray.height:
             try:
                 orientation = pytesseract.image_to_osd(gray, output_type=pytesseract.Output.DICT, timeout=15)
                 rotate = orientation.get("rotate", 0)
                 conf = float(orientation.get("orientation_conf", 0))
-                if gray.height >= gray.width and rotate in (90, 270):
-                    rotate = 0
-                if conf >= 15.0 and rotate in (90, 180, 270):
+                if conf >= 30.0 and rotate in (90, 270):
                     gray = gray.rotate(-rotate, expand=True)
             except (pytesseract.TesseractNotFoundError, RuntimeError, pytesseract.TesseractError, Exception):
                 pass

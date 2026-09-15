@@ -319,6 +319,8 @@ def upload_document():
             for page in range(pages):
                 old = db.execute("SELECT * FROM documents WHERE user_id=? AND kind=? AND digest=? AND page=?", (g.user_id, kind, scoped_digest, page)).fetchone()
                 if old:
+                    if old["status"] in {"review", "failed"}:
+                        db.execute("UPDATE documents SET status='queued',error='',started_at=NULL,retry_after=0,auto_retries=0,fingerprint=NULL,duplicate_of=NULL WHERE id=?", (old["id"],))
                     items.append({"id": old["id"], "duplicate": True})
                     continue
                 doc_id = uuid.uuid4().hex
