@@ -206,25 +206,35 @@ def extract_payments(text, total, kind):
             entry["provider"] = "" if label == "YEMEKKARTI" else label
         entries.append(entry)
 
-    # Fallback for Z-reports: if no payment entries found in ODEME BILGILERI, check BELGE TIPLERI
-    if is_z and not entries:
+    # Fallback for Z-reports: if no payment entries found or they don't sum to total, check BELGE TIPLERI
+    if is_z and (not entries or (total and sum((decimal_money(e["amount"]) for e in entries), Decimal(0)) != decimal_money(total))):
+        bt_entries = []
         in_bt = False
         for line in lines:
             if re.search(r"\bBELGE\s*TIPLERI\b", line):
                 in_bt = True
                 continue
             if in_bt:
-                if re.search(r"\b(?:SAYACLAR|KASIYER|IPTAL)\b", line):
+                if re.search(r"\b(?:SAYACLAR|KASIYER|KASYER|EKU|JH|MAL\s*F)\b", line):
                     in_bt = False
                     continue
-                match = re.search(r"[-~•*+]\s*(NAKIT|KREDI|DIGER|YEMEK\s*KARTI)\b", line)
+                match = re.search(r"[-~•*+']?\s*(NAKIT|KREDI|DIGER|YEMEK\s*KARTI)\b", line)
                 if match:
                     label = match.group(1)
                     vals = re.findall(MONEY, re.sub(r"[*•+~']", "", line))
                     if vals:
                         method = "cash" if label == "NAKIT" else "card" if label == "KREDI" else "other"
                         amount = decimal_money(vals[-1])
-                        entries.append({"method": method, "amount": str(amount), "bank_code": "", "bank_role": "acquirer" if method == "card" else "unspecified"})
+                        bt_entries.append({"method": method, "amount": str(amount), "bank_code": "", "bank_role": "acquirer" if method == "card" else "unspecified"})
+        if bt_entries:
+            if not entries:
+                entries = bt_entries
+            elif total:
+                tot_dec = decimal_money(total)
+                if sum((decimal_money(e["amount"]) for e in bt_entries), Decimal(0)) == tot_dec:
+                    entries = bt_entries
+                elif sum((decimal_money(e["amount"]) for e in bt_entries if decimal_money(e["amount"]) > 0), Decimal(0)) == tot_dec:
+                    entries = bt_entries
     # Z reports may contain both total card takings and bank-by-bank detail.
     if kind == "z-reports":
         meals = [entry for entry in entries if entry["method"] == "meal_card"]
@@ -260,7 +270,12 @@ def extract_payments(text, total, kind):
             elif sum((decimal_money(e["amount"]) for e in unique_entries if decimal_money(e["amount"]) > 0), Decimal(0)) == total_dec:
                 entries = unique_entries
             else:
-                issues.append("Ödeme dağılımı belge toplamıyla uyuşmuyor.")
+                # Check if any single entry equals total (e.g. KREDI 35650.00)
+                matching = [e for e in unique_entries if decimal_money(e["amount"]) == total_dec]
+                if matching:
+                    entries = [matching[0]]
+                else:
+                    issues.append("Ödeme dağılımı belge toplamıyla uyuşmuyor.")
     if not entries:
         issues.append("Ödeme yöntemi ve tutarı okunamadı.")
     if kind == "receipts" and any(entry["method"] == "pos" for entry in entries):

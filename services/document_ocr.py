@@ -342,7 +342,7 @@ def read_document(path: Path, page: int, kind: str, attempt: int) -> dict:
                 data.update(confidence=confidence, engine=f"Tesseract · {language}")
                 candidates.append(data)
             best = min(candidates, key=lambda data: (len(data["issues"]), -data["confidence"]))
-            if has_conflicts(candidates[0], candidates[1]):
+            if not candidates[0].get("issues") and not candidates[1].get("issues") and has_conflicts(candidates[0], candidates[1]):
                 best["issues"] = list(dict.fromkeys(best["issues"] + ["İki okuma sonucu birlikte doğrulanamadı. Belgeyi inceleyip yeniden deneyin."]))
             # Only prefer EasyOCR if it genuinely has fewer issues AND its confidence is not terrible
             if (attempt > 1 or best.get("issues")) and not os.getenv("DISABLE_EASYOCR"):

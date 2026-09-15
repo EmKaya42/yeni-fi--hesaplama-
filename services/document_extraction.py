@@ -392,9 +392,18 @@ def extract_document(text: str, kind: str) -> dict[str, Any]:
             if gross and decimal_money(gross[0]) != decimal_money(base[0]) + decimal_money(tax[0]):
                 issues.append(f"%{rate} satış tutarı, matrah ve KDV toplamıyla uyuşmuyor.")
             breakdown.append({"rate": rate, "base": base[0], "tax": tax[0]})
-    if len(rates) == 1 and not breakdown and total and taxes:
-        breakdown = [{"rate": rates[0], "base": str(decimal_money(total) - decimal_money(taxes[0])), "tax": taxes[0]}]
-        notes.append("Matrah, belgede okunan toplam tutardan KDV düşülerek hesaplandı.")
+    if not breakdown and total and taxes:
+        tot_dec = decimal_money(total)
+        tax_dec = decimal_money(taxes[0])
+        base_dec = tot_dec - tax_dec
+        if base_dec > 0:
+            candidate_rates = [r for r in rates if r in RATES and r > 0] or [20, 10, 8, 1]
+            for cand_rate in candidate_rates:
+                exp_tax = (base_dec * Decimal(cand_rate) / 100).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                if abs(exp_tax - tax_dec) <= Decimal("0.05"):
+                    breakdown = [{"rate": cand_rate, "base": str(base_dec), "tax": str(tax_dec)}]
+                    notes.append("Matrah, belgede okunan toplam tutardan KDV düşülerek hesaplandı.")
+                    break
     explicit_base = label_values(lines, r"^(?:KDV\s*)?MATRAH\b")
     if explicit_base and len(breakdown) == 1 and decimal_money(explicit_base[0]) != decimal_money(breakdown[0]["base"]):
         issues.append("Belgedeki matrah ile hesaplanan matrah uyuşmuyor.")
