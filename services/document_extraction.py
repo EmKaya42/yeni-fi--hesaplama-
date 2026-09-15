@@ -332,7 +332,15 @@ def extract_document(text: str, kind: str) -> dict[str, Any]:
         issues.append("Toplam tutar alanları birbiriyle çelişiyor.")
     total = totals[0] if totals else ""
     taxes = label_values(lines, r"^(?:TOPKDV|TOPLAM\s*KDV|KDV(?:\s*(?:TOPLAMI?|TUTARI?))?)\b(?!\s*%)")
-    if len(taxes) > 1:
+    if is_z and len(taxes) > 1:
+        non_zero = [t for t in taxes if decimal_money(t) > 0]
+        if non_zero and len(set(non_zero)) == 1:
+            taxes = [non_zero[0]]
+        elif non_zero:
+            from collections import Counter
+            counts = Counter(non_zero)
+            taxes = [counts.most_common(1)[0][0]]
+    if len(set(taxes)) > 1:
         issues.append("KDV toplamları birbiriyle çelişiyor.")
     rate_matches = re.findall(r"%\s*(\d{1,2})(?:\.\d{2})?\b|\bKDV\s+(\d{1,2})(?![.,\d])\b", plain)
     rates = sorted({int(value) for match in rate_matches for value in match if value})
@@ -372,6 +380,12 @@ def extract_document(text: str, kind: str) -> dict[str, Any]:
                                     base = [str(decimal_money(gross[0]) - decimal_money(tax[0]))]
                             break
                     break
+        if not base and tax and total and len([r for r in rates if r > 0]) == 1:
+            base = [str(decimal_money(total) - decimal_money(tax[0]))]
+        if not base and tax and Decimal(rate) > 0:
+            calc_base = (decimal_money(tax[0]) * 100 / Decimal(rate)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            if calc_base > 0:
+                base = [str(calc_base)]
         if len(base) > 1 or len(tax) > 1 or len(summary) > 1 or len(triple) > 1 or len(gross) > 1:
             issues.append(f"%{rate} KDV kırılımı çelişkili.")
         if base and tax:
@@ -384,8 +398,12 @@ def extract_document(text: str, kind: str) -> dict[str, Any]:
     explicit_base = label_values(lines, r"^(?:KDV\s*)?MATRAH\b")
     if explicit_base and len(breakdown) == 1 and decimal_money(explicit_base[0]) != decimal_money(breakdown[0]["base"]):
         issues.append("Belgedeki matrah ile hesaplanan matrah uyuşmuyor.")
-    if not breakdown or len(breakdown) != len(rates):
+    if not breakdown:
         issues.append("KDV kırılımı tam okunamadı; oran ve tutarlar birlikte gerekli.")
+    elif total and sum((decimal_money(row["base"]) + decimal_money(row["tax"]) for row in breakdown), Decimal(0)) != decimal_money(total):
+        # Only complain about rate count mismatch if breakdown does not match the total amount
+        if len(breakdown) != len([r for r in rates if r > 0 or any(row["rate"] == 0 for row in breakdown)]):
+            issues.append("KDV kırılımı tam okunamadı; oran ve tutarlar birlikte gerekli.")
     for row in breakdown:
         base, tax = decimal_money(row["base"]), decimal_money(row["tax"])
         expected = (base * Decimal(row["rate"]) / 100).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)

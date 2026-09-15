@@ -157,7 +157,7 @@ def extract_payments(text, total, kind):
                 in_belge_tipleri = True
                 continue
             if in_belge_tipleri:
-                if re.search(r"\b(?:SAYACLAR|KASIYER)\b", line):
+                if re.search(r"\b(?:SAYACLAR|KASIYER|KASYER|EKU|JH|MAL\s*F)\b", line):
                     in_belge_tipleri = False
                 else:
                     continue
@@ -243,8 +243,24 @@ def extract_payments(text, total, kind):
                 entries.remove(summaries[0])
             else:
                 issues.append("Banka bazındaki POS toplamları kart toplamıyla uyuşmuyor.")
-    if entries and total and sum((decimal_money(entry["amount"]) for entry in entries), Decimal(0)) != decimal_money(total):
-        issues.append("Ödeme dağılımı belge toplamıyla uyuşmuyor.")
+    if entries and total:
+        total_dec = decimal_money(total)
+        current_sum = sum((decimal_money(entry["amount"]) for entry in entries), Decimal(0))
+        if current_sum != total_dec:
+            # Try deduplicating exact matches (common across Z-report sections)
+            unique_entries = []
+            seen = set()
+            for e in entries:
+                key = (e.get("method"), e.get("amount"), e.get("bank_code", ""))
+                if key not in seen:
+                    seen.add(key)
+                    unique_entries.append(e)
+            if sum((decimal_money(e["amount"]) for e in unique_entries), Decimal(0)) == total_dec:
+                entries = unique_entries
+            elif sum((decimal_money(e["amount"]) for e in unique_entries if decimal_money(e["amount"]) > 0), Decimal(0)) == total_dec:
+                entries = unique_entries
+            else:
+                issues.append("Ödeme dağılımı belge toplamıyla uyuşmuyor.")
     if not entries:
         issues.append("Ödeme yöntemi ve tutarı okunamadı.")
     if kind == "receipts" and any(entry["method"] == "pos" for entry in entries):

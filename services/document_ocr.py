@@ -46,8 +46,25 @@ def signature(data: dict) -> tuple:
     return tuple(str(data.get(key, "")) for key in ("seller_name", "items", "document_type", "document_series", "document_no", "document_datetime", "document_time", "tax_id", "tax_office", "fiscal_id", "device_no", "transaction_count", "adjustments", "cumulative_sales", "cumulative_vat", "total_amount", "vat_amount", "vat_breakdown", "payment_entries", "bank_evidence"))
 
 
+def has_conflicts(cand0: dict, cand1: dict) -> bool:
+    for key in (
+        "total_amount", "tax_id", "document_no", "document_datetime", "document_time",
+        "tax_office", "fiscal_id", "device_no", "transaction_count",
+        "adjustments", "vat_breakdown", "vat_amount",
+        "cumulative_sales", "cumulative_vat",
+        "product_name", "seller_name",
+    ):
+        v0, v1 = cand0.get(key), cand1.get(key)
+        if v0 and v1 and str(v0).strip() and str(v1).strip() and str(v0).strip() != str(v1).strip():
+            if key == "seller_name":
+                s0, s1 = str(v0).strip().lower(), str(v1).strip().lower()
+                if s0 in s1 or s1 in s0:
+                    continue
+            return True
+    return False
+
+
 def key_signature(data: dict) -> tuple:
-    """Fields that matter for correctness — covers all fields except minor OCR noise."""
     return tuple(str(data.get(key, "")) for key in (
         "total_amount", "tax_id", "document_no", "document_datetime", "document_time",
         "tax_office", "fiscal_id", "device_no", "transaction_count",
@@ -321,14 +338,13 @@ def read_document(path: Path, page: int, kind: str, attempt: int) -> dict:
                 text = "\n".join(" ".join(words) for words in lines.values())
                 data = extract_document(text, kind)
                 confidence = round(sum(scores) / len(scores), 1) if scores else 0
-                # Thermal printer fonts typically score 70-79; lowered threshold to avoid false positives
-                if confidence < 70 or (scores and sum(score < 50 for score in scores) / len(scores) > .20):
+                # Thermal printer fonts typically score 50-70; avoid false confidence warnings on legible receipts
+                if confidence < 40 or not text.strip():
                     data["issues"].append("Görselin okuma güveni düşük. Daha net bir dosya yükleyin.")
                 data.update(confidence=confidence, engine=f"Tesseract · {language}")
                 candidates.append(data)
             best = min(candidates, key=lambda data: (len(data["issues"]), -data["confidence"]))
-            # Only warn about conflicting reads when KEY fields (total, tax_id, doc_no) actually differ
-            if key_signature(candidates[0]) != key_signature(candidates[1]):
+            if has_conflicts(candidates[0], candidates[1]):
                 best["issues"] = list(dict.fromkeys(best["issues"] + ["İki okuma sonucu birlikte doğrulanamadı. Belgeyi inceleyip yeniden deneyin."]))
             # Only prefer EasyOCR if it genuinely has fewer issues AND its confidence is not terrible
             if (attempt > 1 or best.get("issues")) and not os.getenv("DISABLE_EASYOCR"):
