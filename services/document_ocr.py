@@ -282,16 +282,19 @@ def read_document(path: Path, page: int, kind: str, attempt: int) -> dict:
         if attempt > 1:
             try:
                 orientation = pytesseract.image_to_osd(gray, output_type=pytesseract.Output.DICT, timeout=15)
-                gray = gray.rotate(-orientation.get("rotate", 0), expand=True)
-            except pytesseract.TesseractNotFoundError:
-                pass
-            except (RuntimeError, pytesseract.TesseractError):
+                rotate = orientation.get("rotate", 0)
+                conf = float(orientation.get("orientation_conf", 0))
+                if gray.height >= gray.width and rotate in (90, 270):
+                    rotate = 0
+                if conf >= 15.0 and rotate in (90, 180, 270):
+                    gray = gray.rotate(-rotate, expand=True)
+            except (pytesseract.TesseractNotFoundError, RuntimeError, pytesseract.TesseractError, Exception):
                 pass
         try:
             languages = pytesseract.get_languages(config="")
             language = "tur+eng" if "tur" in languages else "eng"
             candidates = []
-            for psm, image in ((6, ImageOps.autocontrast(gray)), (4 if attempt == 1 else 11, ImageEnhance.Contrast(gray).enhance(1.6))):
+            for psm, image in ((6, ImageOps.autocontrast(gray)), (4, ImageEnhance.Contrast(gray).enhance(1.4))):
                 tokens = pytesseract.image_to_data(image, lang=language, config=f"--oem 3 --psm {psm}", output_type=pytesseract.Output.DICT, timeout=75)
                 lines: dict[tuple, list[str]] = {}
                 scores = []
@@ -311,8 +314,18 @@ def read_document(path: Path, page: int, kind: str, attempt: int) -> dict:
             best = min(candidates, key=lambda data: (len(data["issues"]), -data["confidence"]))
             if signature(candidates[0]) != signature(candidates[1]) or any(candidate["issues"] for candidate in candidates):
                 best["issues"] = list(dict.fromkeys(best["issues"] + ["İki okuma sonucu birlikte doğrulanamadı. Belgeyi inceleyip yeniden deneyin."]))
+            if (attempt > 1 or best.get("issues")) and not os.getenv("DISABLE_EASYOCR"):
+                try:
+                    easy_result = _read_with_easyocr(gray, kind)
+                    if easy_result and len(easy_result.get("issues", [])) < len(best.get("issues", [])):
+                        return easy_result
+                except Exception:
+                    pass
             return best
         except pytesseract.TesseractNotFoundError:
             return _read_with_easyocr(gray, kind)
         except (RuntimeError, pytesseract.TesseractError) as error:
-            raise RetryableOCRError("OCR tamamlanamadı veya süre sınırı aşıldı. Yeniden deneyin.") from error
+            try:
+                return _read_with_easyocr(gray, kind)
+            except Exception:
+                raise RetryableOCRError("OCR tamamlanamadı veya süre sınırı aşıldı. Yeniden deneyin.") from error
