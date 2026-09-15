@@ -1,2 +1,4 @@
 -r requirements.txt
 gunicorn>=23,<24
+paddlepaddle
+paddleocr
