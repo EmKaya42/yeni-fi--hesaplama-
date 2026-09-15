@@ -208,20 +208,33 @@ def receipt_description(data: dict) -> str:
     return description
 
 
+def detect_is_z_report(plain: str, original: list[str]) -> bool:
+    indicators = [
+        r"\bZ\s*(?:RAPORU?|NO)\b",
+        r"\b(?:GUNLUK\s+FIS\s+DOKUMU|MALI\s+BELLEK|BELGE\s+TIPLERI|SAYACLAR|KASIYER\s+BILGI|MUSTERI\s+FISI?\s+ADET|OKC\s+FISLERI|MALI\s+FIS\s+ADET)\b",
+        r"\bRAPOR\s+NO\s*[:#=-]?\s*\d+\b",
+        r"\bEKU\s*NO\s*[:#=-]?\s*\d+\b",
+    ]
+    return any(re.search(pat, plain, re.I) for pat in indicators)
+
+
 def extract_seller(original):
     boundary = r"\b(?:VKN|TCKN|VERGI|TARIH|SAAT|FIS|FATURA|RAPOR|MALI|CIHAZ|TEL|ADRES|MAH|MAHALLESI|CAD|CADDE|CADDESI|SOK|SOKAK|SUBE)\b|\bV\.?D\.?\b"
+    company_ext = r"\b(?:LTD|LIMITED|STI|SIRKETI|SANAYI|TICARET|ANONIM|A\.S\.|SAN|TIC|VE\s+TIC|SAR|ST[Iİ])\b"
     for index, raw in enumerate(original[:8]):
         line = folded(raw)
         if len(raw) < 3 or not re.search(r"[A-Z]{3}", line) or re.search(boundary, line):
             continue
         labeled = re.match(r"^(?:ISLETME\s+(?:ADI|UNVANI)|UNVAN|SATICI)\s*[:=-]\s*", line)
         name = raw[labeled.end():] if labeled else raw
+        name = re.sub(r"^[\s\"'~•*({[]+", "", name).strip(" \t\"'~•*)}]|-")
         parts = [name]
         for continuation in original[index + 1:index + 3]:
             next_line = folded(continuation)
-            if re.search(boundary, next_line) or not re.search(r"\b(?:LTD|LIMITED|STI|SIRKETI|SANAYI|TICARET|ANONIM|A\.S\.)", next_line):
+            if re.search(boundary, next_line) or not re.search(company_ext, next_line):
                 break
-            parts.append(continuation)
+            clean_cont = re.sub(r"^[\s\"'~•*({[]+", "", continuation).strip(" \t\"'~•*)}]|-")
+            parts.append(clean_cont)
         return " ".join(parts)
     return ""
 
@@ -237,6 +250,7 @@ def extract_document(text: str, kind: str) -> dict[str, Any]:
     plain = "\n".join(lines)
     issues: list[str] = []
     notes: list[str] = []
+    is_detected_z = detect_is_z_report(plain, original)
     is_z = kind == "z-reports"
 
     def identifier(pattern: str) -> str:
@@ -256,24 +270,39 @@ def extract_document(text: str, kind: str) -> dict[str, Any]:
             if tax_id:
                 break
     doc_no = identifier(r"\b(?:Z\s*(?:RAPORU?)?(?:\s*(?:NO|NUMARASI))?|RAPOR\s*(?:NO|NUMARASI)?|Z\s*NO)\s*[:#=-]?\s*(\d{1,12})\b" if is_z else r"\b(?:FI[SŞ\?]?\s*(?:NO|NUMARASI)?|FATURA\s*(?:NO|NUMARASI)?|BELGE\s+(?:NO|NUMARASI))\s*[:#=-]?\s*([A-Z0-9][A-Z0-9/-]{0,29})\b")
-    if not is_z and re.search(r"\bZ\s*(?:RAPOR|NO)", plain):
+    if is_z and not doc_no:
+        z_bottom = re.search(r"\bZ\s*NO\s*[:#=-]?\s*(\d{1,12})\b", plain)
+        if z_bottom:
+            doc_no = z_bottom.group(1)
+    if not is_z and (is_detected_z or re.search(r"\bZ\s*(?:RAPOR|NO)", plain)):
         issues.append("Bu belge Z raporu görünüyor. Z Raporları bölümüne yükleyin.")
     if is_z:
-        # Primary: SATIS TOPLAMI (appears in document summary & BELGE TIPLERI)
-        totals = label_values(lines, r"^(?:SATIS\s+TOPLAMI|TOPLAM\s+SATIS(?:\s+TUTARI)?|GUNLUK\s+(?:TOPLAM\s+)?CIRO|GENEL\s+TOPLAM|TOPLAM\s+CIRO)\b")
-        # Fallback: TOPLAM line immediately after GUNLUK FIS DOKUMU separator
-        if not totals:
-            for idx, line in enumerate(lines):
-                if re.search(r"GUNLUK\s+FIS\s+DOKUMU", line):
-                    nxt = [ln for ln in lines[idx+1:idx+4] if re.match(r"^TOPLAM\b", ln)]
-                    for ln in nxt:
-                        vals = re.findall(MONEY, re.sub(r"\*", "", ln.split("TOPLAM", 1)[1]))
+        candidate_totals = []
+        candidate_totals.extend(label_values(lines, r"^(?:SATIS\s+TOPLAMI|TOPLAM\s+SATIS(?:\s+TUTARI)?|GUNLUK\s+(?:TOPLAM\s+)?CIRO|GENEL\s+TOPLAM|TOPLAM\s+CIRO)\b"))
+        for idx, line in enumerate(lines):
+            if re.search(r"GUNLUK\s+FIS\s+DOKUMU", line):
+                for ln in lines[idx + 1:idx + 5]:
+                    if re.match(r"^TOPLAM\b", ln):
+                        vals = re.findall(MONEY, re.sub(r"[*•+~']", "", ln.split("TOPLAM", 1)[1]))
                         if vals:
-                            totals.append(str(decimal_money(vals[-1])))
-                    break
-        # Fallback: KASIYERI line (shows grand total per cashier)
-        if not totals:
-            totals = label_values(lines, r"^KASIYERI?\b")
+                            candidate_totals.append(str(decimal_money(vals[-1])))
+                break
+        candidate_totals.extend(label_values(lines, r"^KASIYERI?\b"))
+        for idx, line in enumerate(lines):
+            if re.search(r"KDV\s+BILGILERI", line):
+                for ln in lines[idx + 1:idx + 6]:
+                    if re.match(r"^TOPLAM\b", ln):
+                        vals = re.findall(MONEY, re.sub(r"[*•+~']", "", ln.split("TOPLAM", 1)[1]))
+                        if vals:
+                            candidate_totals.append(str(decimal_money(vals[-1])))
+                break
+        if candidate_totals:
+            from collections import Counter
+            counts = Counter(candidate_totals)
+            most_common = counts.most_common(1)[0][0]
+            totals = [most_common]
+        else:
+            totals = []
     else:
         totals = label_values(lines, r"^(?:GENEL\s+TOPLAM|ODENECEK(?:\s+TUTAR)?|TOPLAM(?:\s+TUTAR)?|TOTAL)\b(?!\s*(?:KDV|VERGI|INDIRIM|ISKONTO|IPTAL|IADE|FIS|ISLEM))")
     if len(totals) > 1:
@@ -301,6 +330,25 @@ def extract_document(text: str, kind: str) -> dict[str, Any]:
         if not base and summary:
             base = [str(decimal_money(summary[0][0]))]
             tax = [str(decimal_money(summary[0][1]))]
+        # Z-report: match next-line TOPLAM after KDV %{rate}
+        if is_z and not base and not tax:
+            for idx, line in enumerate(lines):
+                if re.match(rf"^KDV\s*%\s*{rate}\b", line):
+                    tax_vals = re.findall(MONEY, re.sub(r"[*•+~']", "", line))
+                    if tax_vals:
+                        tax = [str(decimal_money(tax_vals[-1]))]
+                    for next_ln in lines[idx + 1:idx + 3]:
+                        if re.match(r"^TOPLAM\b", next_ln):
+                            gross_vals = re.findall(MONEY, re.sub(r"[*•+~']", "", next_ln))
+                            if gross_vals:
+                                cand_gross = decimal_money(gross_vals[-1])
+                                if total and (cand_gross > decimal_money(total) or str(cand_gross).endswith(str(decimal_money(total)))):
+                                    cand_gross = decimal_money(total)
+                                gross = [str(cand_gross)]
+                                if tax:
+                                    base = [str(decimal_money(gross[0]) - decimal_money(tax[0]))]
+                            break
+                    break
         if len(base) > 1 or len(tax) > 1 or len(summary) > 1 or len(triple) > 1 or len(gross) > 1:
             issues.append(f"%{rate} KDV kırılımı çelişkili.")
         if base and tax:
@@ -337,10 +385,11 @@ def extract_document(text: str, kind: str) -> dict[str, Any]:
         issues.append("Toplam tutar sıfırdan büyük olmalı.")
     from services.banking import extract_payments
     from services.document_details import extract_details, discount_amount
-    details = extract_details(original, kind, total, issues, notes)
+    effective_kind = "z-reports" if is_z else kind
+    details = extract_details(original, effective_kind, total, issues, notes)
     if details["document_time"] and date:
         date = date[:10] + "T" + details["document_time"]
-    payments, payment_issues = extract_payments(text, total, kind)
+    payments, payment_issues = extract_payments(text, total, effective_kind)
     issues.extend(payment_issues)
     if re.search(r"\b(?:USD|EUR|DOLAR|EURO)\b", plain):
         issues.append("Dövizli belge otomatik TRY aktarımına uygun değil.")
@@ -369,7 +418,7 @@ def extract_document(text: str, kind: str) -> dict[str, Any]:
         issues.append("Ürün açıklaması Excel hücre sınırını aşıyor.")
     series = identifier(r"^(?:B\.?\s*SERI|BELGE\s*SERI(?:SI)?|SERI(?:\s*NO)?)\s*[:#=-]\s*([A-Z0-9]{1,10})\b")
     return {"extraction_version": 4, "seller_name": seller, "product_name": "; ".join(product_names), **details,
-            "items": items, "document_series": series, "document_type": "Z Raporu" if is_z else "Fatura" if re.search(r"\bFATURA\b", plain) else "Yazar Kasa Fişi",
+            "items": items, "document_series": series, "document_type": "Z Raporu" if (is_z or is_detected_z or re.search(r"\bZ\s*(?:RAPOR|NO)", plain)) else "Fatura" if re.search(r"\bFATURA\b", plain) else "Yazar Kasa Fişi",
             "tax_id": tax_id, "document_no": doc_no, "document_datetime": date,
             "total_amount": total, "vat_amount": str(sum((decimal_money(row["tax"]) for row in breakdown), Decimal(0))) if breakdown else "",
             "vat_breakdown": breakdown, **payments,

@@ -148,9 +148,11 @@ def extract_payments(text, total, kind):
         lines = [_cl(folded(line.strip())) for line in text.splitlines() if line.strip()]
     except ImportError:
         lines = [folded(line.strip()) for line in text.splitlines() if line.strip()]
+    
+    is_z = kind == "z-reports" or bool(re.search(r"\bZ\s*(?:RAPORU?|NO)\b|\bGUNLUK\s+FIS\s+DOKUMU\b", text, re.I))
     in_belge_tipleri = False
     for index, line in enumerate(lines):
-        if kind == "z-reports":
+        if is_z:
             if re.search(r"\bBELGE\s*TIPLERI\b", line):
                 in_belge_tipleri = True
                 continue
@@ -163,10 +165,10 @@ def extract_payments(text, total, kind):
         if not match or re.search(r"IADE|IPTAL|KOMISYON|ISLEM\s*(?:NO|SAYISI)|KART\s*(?:NO|NUMARASI)", line):
             continue
         # Skip Z-report sub-section lines (e.g. "-KREDI *35.650,00" under BELGE TIPLERI)
-        if kind == "z-reports" and line.lstrip().startswith(("-", "~", "'~", "*", "•", "+")):
+        if is_z and line.lstrip().startswith(("-", "~", "'~", "*", "•", "+")):
             continue
-        # Strip OCR asterisks before searching for amounts
-        tail = re.sub(r"\*", "", line[match.end():])
+        # Strip OCR asterisks and noise before searching for amounts
+        tail = re.sub(r"[*•+~']", "", line[match.end():])
         # Remove trailing count digit (e.g. 'KREDI 33' -> 33 is count not amount)
         tail_no_count = re.sub(r"^\s*\d{1,4}\s*$", "", tail.strip())
         values = re.findall(MONEY, tail_no_count if tail_no_count else tail)
@@ -174,7 +176,7 @@ def extract_payments(text, total, kind):
         if not values:
             for lookahead in range(1, 3):
                 if index + lookahead < len(lines):
-                    next_l = re.sub(r"\*", "", lines[index + lookahead])
+                    next_l = re.sub(r"[*•+~']", "", lines[index + lookahead])
                     if re.fullmatch(r"[\s*:=TL0-9.,+-]+", next_l) or re.match(r"^TOPLAM\b", next_l):
                         nxt_vals = re.findall(MONEY, next_l)
                         if nxt_vals:
@@ -188,11 +190,13 @@ def extract_payments(text, total, kind):
         label = re.sub(r"\s", "", match.group())
         method = "meal_card" if re.fullmatch(r"YEMEKKARTI|PLUXEE|SODEXO|MULTINET|EDENRED|SETCARD|METROPOLKART|TICKET(?:RESTAURANT)?", label) else "cash" if label == "NAKIT" else "debit_card" if label in {"BANKAKARTI", "DEBIT"} else "card" if (label in {"KREDIKARTI", "CREDIT", "KREDI"} or "KREDI" in label or "KRED" in label) else "bank_transfer" if label in {"HAVALE", "EFT", "FAST"} else "pos" if label in {"POS", "KARTODEME", "KARTLAODEME"} else "other"
         amount = decimal_money(values[-1])
-        # If an OCR artifact prepended a digit (like 4 from a pen checkmark or asterisk) making amount exceed total:
+        # If an OCR artifact prepended a digit (like 4 or 7 from a pen checkmark or asterisk) making amount exceed total:
         if total and amount > decimal_money(total):
             s_amt = str(amount)
             s_tot = str(decimal_money(total))
-            if s_amt.startswith("4") and s_amt[1:] == s_tot:
+            if len(s_amt) > len(s_tot) and s_amt.endswith(s_tot):
+                amount = decimal_money(s_tot)
+            elif s_amt.startswith(("4", "7")) and s_amt[1:] == s_tot:
                 amount = decimal_money(s_amt[1:])
         if amount < 0 or re.search(r"-\s*[*₺]?\s*" + re.escape(values[-1]), line):
             issues.append("Negatif ödeme satırı incelenmeli.")
@@ -201,6 +205,26 @@ def extract_payments(text, total, kind):
         if method == "meal_card":
             entry["provider"] = "" if label == "YEMEKKARTI" else label
         entries.append(entry)
+
+    # Fallback for Z-reports: if no payment entries found in ODEME BILGILERI, check BELGE TIPLERI
+    if is_z and not entries:
+        in_bt = False
+        for line in lines:
+            if re.search(r"\bBELGE\s*TIPLERI\b", line):
+                in_bt = True
+                continue
+            if in_bt:
+                if re.search(r"\b(?:SAYACLAR|KASIYER|IPTAL)\b", line):
+                    in_bt = False
+                    continue
+                match = re.search(r"[-~•*+]\s*(NAKIT|KREDI|DIGER|YEMEK\s*KARTI)\b", line)
+                if match:
+                    label = match.group(1)
+                    vals = re.findall(MONEY, re.sub(r"[*•+~']", "", line))
+                    if vals:
+                        method = "cash" if label == "NAKIT" else "card" if label == "KREDI" else "other"
+                        amount = decimal_money(vals[-1])
+                        entries.append({"method": method, "amount": str(amount), "bank_code": "", "bank_role": "acquirer" if method == "card" else "unspecified"})
     # Z reports may contain both total card takings and bank-by-bank detail.
     if kind == "z-reports":
         meals = [entry for entry in entries if entry["method"] == "meal_card"]

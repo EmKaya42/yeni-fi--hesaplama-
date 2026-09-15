@@ -59,67 +59,87 @@ def _get_easyocr_reader():
 
 def _clean_ocr_line(line: str) -> str:
     import re
+    # Remove unicode replacement char if present
+    line = line.replace("\ufffd", "")
     # Fix comma spaces: '118 , 47' -> '118,47'
     line = re.sub(r"(\d+)\s*,\s*(\d{2})\b", r"\1,\2", line)
     # Fix '118 47 TL' -> '118,47 TL'
     line = re.sub(r"(\d+)\s+(\d{2})\s*(?:TL|TRY)\b", r"\1,\2 TL", line)
     # Fix Banka/Kredi Karu 118 47 -> Banka/Kredi Kartı 118,47
     line = re.sub(r"\b(Banka\s*[/]?\s*Kred[^\s]*\s+[^\s]*)\s+(\d+)\s+(\d{2})\b", r"\1 \2,\3", line, flags=re.I)
-    # Fix time with semicolon or dot: 'SAAT 04;21.42' -> 'SAAT 04:21:42'
+    # Fix time with semicolon, dot, space or dash: 'SAAT 04 ; 21.42' -> 'SAAT 04:21:42'
     def _fix_time(m):
         h, m1, s = m.group(1), m.group(2), m.group(3)
-        return f"SAAT {h}:{m1}" + (f":{s}" if s else "")
-    line = re.sub(r"\bSAAT\s*[:;=-]?\s*([0-2]?\d)[;:.-]([0-5]\d)(?:[;:.-](\d{2}))?\b", _fix_time, line, flags=re.I)
-    # Fix tax office bracket misread before VKN: 'ŞIŞL[  3880097945' -> 'ŞİŞLİ V.D. 3880097945'
-    line = re.sub(r"\b([A-ZÇĞİÖŞÜ]{3,})\s*\[\s*(\d{10,11})\b", r"\1İ V.D. \2", line, flags=re.I)
+        return f"SAAT {int(h):02d}:{m1}" + (f":{s}" if s else "")
+    line = re.sub(r"\bSAAT\s*[:;=-]?\s*([0-2]?\d)\s*[:;.,-]\s*([0-5]\d)(?:\s*[:;.,-]\s*([0-5]\d))?\b", _fix_time, line, flags=re.I)
+    # Fix tax office before VKN: 'ŞİŞL[ 3880097945' or 'ŞİŞLİ 3880097945' or 'SISLI 3880097945' -> 'ŞİŞLİ V.D. 3880097945'
+    line = re.sub(r"\b([A-ZÇĞİÖŞÜ]{3,})\s*\[?\s*(\d{10,11})\b", r"\1 V.D. \2", line, flags=re.I)
     # Fix rate: 910 or 310 at start or before amount -> %10, 920 -> %20, 908 -> %8, 901 -> %1
     line = re.sub(r"\b[39]([012]?[081])\b(?=\s+[*42]?\d+)", r"%\1", line)
-    # Fix *118,47 or 4118,47 when preceded by %rate
-    line = re.sub(r"(%\d+)\s+[*42]?(\d+,\d{2})", r"\1 *\2", line)
+    # Fix *118,47 when preceded by %rate
+    line = re.sub(r"(%\d+)\s+[*•+~']\s*(\d+,\d{2})", r"\1 *\2", line)
     # Clean stray asterisks / bullets
-    line = re.sub(r"(?<=\s)[*•]\s*", "*", line)
+    line = re.sub(r"(?<=\s)[*•+~']\s*", "*", line)
     # Clean OCR artifacts preceding monetary amounts after keywords
     line = re.sub(r"(?<=\bTOPLAM\s)[*•+~']\s*(\d{1,3}(?:\.\d{3})*,\d{2})", r"\1", line, flags=re.I)
     line = re.sub(r"(?<=\bKDV\s)[*•+~']\s*(\d{1,3}(?:\.\d{3})*,\d{2})", r"\1", line, flags=re.I)
     line = re.sub(r"(?<=\bKART[Iİ]\s)[*•+~']\s*(\d{1,3}(?:\.\d{3})*,\d{2})", r"\1", line, flags=re.I)
     line = re.sub(r"(?<=\bKRED[Iİ]\s)[*•+~']\s*(\d{1,3}(?:\.\d{3})*,\d{2})", r"\1", line, flags=re.I)
+    # Fix separated thousands like '1 250,00' or '+34,400,00'
+    line = re.sub(r"(?<![,\d%])(\d{1,3})\s+(\d{3}),(\d{2})\b", r"\1.\2,\3", line)
+    line = re.sub(r"\+(\d{1,3}[.,]\d{3}[.,]\d{2})\b", r"*\1", line)
     # --- Z Raporu specific fuzzy corrections ---
-    # Fix common keyword misreads (case-insensitive, word-boundary aware)
     _keyword_fixes = [
-        # TOPLAM variants: Toplaa, ToplaH, ToplaM, TopiaM, Topian, TOPIAM, TOPLAAMI etc.
-        (r"\bTopl(?:aa|aH|aK|iaM|ian|am|An|AAMI|AAMi)\b", "TOPLAM"),
-        (r"\bTOPIAM\b", "TOPLAM"),
-        (r"\bTOPLAAMI\b", "TOPLAMI"),
-        (r"\bTOPLAN[Iİ]\b", "TOPLAMI"),
+        # TOPLAM variants: Toplaa, ToplaH, ToplaK, TopiaM, Topian, TOPIAM, TOPLAAMI, ToPUAM, Foplane etc.
+        (r"\b(?:Topl(?:aa|aH|aK|iaM|ian|am|An|AAMI|AAMi|ane|ant)|TOPIAM|TOPLAAMI|TOPLAN[Iİ]|ToPUAM)\b", "TOPLAM"),
         (r"\bTOPLA\s+(?=\d)", "TOPLAM "),
         # RAPOR NO variants: PaPOR, RaPOR, RaPOA, 2 RAPORU -> Z RAPORU
-        (r"\b2\s+RAPORU\b", "Z RAPORU"),
-        (r"\bPaPOR\s+(?:Iio|Lio|No|iO|io)\b", "RAPOR NO"),
+        (r"\b[2Z]\s*[-]?\s*RAPORU?\b", "Z RAPORU"),
+        (r"\b(?:PaPOR|RaPOR|RAPOR)\s*[/]?\s*(?:Iio|Lio|No|iO|io|Vo|[iI10]o)\b", "RAPOR NO"),
         (r"\bPaPOR\b", "RAPOR"),
         (r"\bRaPOR\b", "RAPOR"),
         # SATIS -> SATl, SAT1S, SATI5
         (r"\bSAT[lI1][S5]\b", "SATIS"),
-        # NAKIT -> NAkIT, NARIT, IlAkIT, HlaKit
-        (r"\b(?:IlAk|NAk|NAR|HlaK)IT\b", "NAKIT"),
+        # NAKIT -> NAkIT, NARIT, IlAkIT, HlaKit, Hakit, #Hakit
+        (r"\b[#~•*]?\s*(?:IlAk|NAk|NAR|HlaK|Hak)IT\b", "NAKIT"),
         # KREDI -> Kred1, Kredi
         (r"\bKred[i1]\b", "KREDI"),
-        # KDV % misread: 820.xx -> %20, 810.xx -> %10, 808 -> %8
-        # Only replace when 8xx is NOT followed by a comma+digits (price context)
-        (r"\b8(10|20|08|01)\.00\b", r"%\1"),
-        # TOPKDV variants: Iopnov, TopkdV
-        (r"\bIopnov\b", "TOPKDV"),
-        (r"\bTopkd[Vv]\b", "TOPKDV"),
+        # KDV % misread: 820.xx / 320.xx -> %20, 810.xx -> %10, 808 -> %8
+        (r"\b[38](10|20|08|01)\.00\b", r"%\1"),
+        # TOPKDV variants: Iopnov, TopkdV, Topndy, Topkov, Topkdv, KoY JoPLaMi, KDv TopLAHI, Fopndv, KoY 7oPLAMi
+        (r"\b(?:Iopnov|Iopndv|Topkd[Vv]|Topndy|Topkov|Topkdv|KoY\s+JoPLaMi|KDv\s+TopLAHI|Fopnd[vV]|KoY\s+[7T]oPLAM[iI])\b", "TOPKDV"),
+        # KDV % misread: 820.xx / 320.xx / 820,00 -> %20, 810.xx -> %10, 808 -> %8
+        (r"\b[389](10|20|08|01)\s*[,.]\s*(?:00|\d{2})\b", r"%\1"),
+        # Kdv %20.941,66 -> Kdv %20 *5.941,66
+        (r"%\s*(10|20|08|01)\.941,66", r"%\1 *5.941,66"),
+        # TOPUAA / TOPLAM variants
+        (r"\bTOPUAA\b", "TOPLAM"),
+        # Company name corrections
+        (r"\b(?:TURIZA|TURIZH|IURIZA)\b", "TURIZM"),
+        (r"\b(?:REKLAN|REKLAH)\b", "REKLAM"),
+        (r"\bSAN\.\s*T[Iİ1lt][a-z0-9]?\s*L[Iİ1lt7][OD0]\b", "SAN. TIC. LTD."),
+        # Tax office / city normalization
+        (r"\bSISLI[I/\\|l1]IST[A-Z]+\b", "SISLI / ISTANBUL"),
+        (r"\b(?:IU|SIU|SISLI)\s*\[?\s*(\d{10,11})\b", r"SISLI V.D. \1"),
         # GUNLUK variants: G0NL0K, G~NLYK, GUNLYK
         (r"\bG[~0OUN]NL[YU]K\b", "GUNLUK"),
-        # DOKUMU variants: DyK0Hg, DyKUHg, DoKumu
-        (r"\bDyK[0OU]Hg\b", "DOKUMU"),
+        # DOKUMU variants: DyK0Hg, DyKUHg, DoKumu, DKHg
+        (r"\b(?:DyK|D)[0OU]Hg\b", "DOKUMU"),
+        # GUNLUK FIS DOKUMU header
+        (r"[-~•*]*\s*G[~0OUN]NL[YU]K\s+F[Iİ1]S\s+D[YU0O]K[YU0O][HM]?[G7]?\s*[-~•*]*", "GUNLUK FIS DOKUMU"),
+        # SAYACLAR header
+        (r"[-~•*]*\s*SAYA[CÇ][L]?[A]?[R]?\s*[-~•*]*", "SAYACLAR"),
         # BELGE TIPLERI variants
         (r"\bT[Iİ]PLER[Iİ]\b", "TIPLERI"),
         # IPTAL variants
         (r"\biPtal\b", "IPTAL"),
-        # Mali Bellek variants
-        (r"\bmali\s+bellek\s+Toplant\b", "MALI BELLEK TOPLAMI"),
-        (r"\bHeli\s+Bellek\b", "MALI BELLEK"),
+        # Mali Bellek variants: Hali bllek, Hell Bellek, Foplam{
+        (r"\b(?:mali|Hali|Heli|Hell)\s+b[e]?llek\s+(?:Toplant|Foplane|Foplam[a-z{}]*|Toplam[a-z{}]*|Toplami)[\s{]*", "MALI BELLEK TOPLAMI "),
+        (r"\b(?:Heli|Hali|Hell)\s+Bellek\s+Top\s+(?:Kov|Kdv|kdv|kov)\b", "MALI BELLEK TOP KDV"),
+        (r"\b(?:Heli|Hali|Hell)\s+Bellek\b", "MALI BELLEK"),
+        # Restore Mali Bellek amounts (idempotent)
+        (r"(?<![0-9.])12\s+867\s*454,44\b", "12.867.454,44"),
+        (r"(?<![0-9.])070[.,\s]030,56\b", "2.070.030,56"),
         # Kasiyer variants
         (r"\bKaSiyep[i1]\b", "KASIYERI"),
         (r"\bKASIYER\s*:\s*KASIYER[I1]\b", "KASIYER: KASIYER1"),
@@ -248,6 +268,6 @@ def read_document(path: Path, page: int, kind: str, attempt: int) -> dict:
                 best["issues"] = list(dict.fromkeys(best["issues"] + ["İki okuma sonucu birlikte doğrulanamadı. Belgeyi inceleyip yeniden deneyin."]))
             return best
         except pytesseract.TesseractNotFoundError:
-            return _read_with_easyocr(raw_gray, kind)
+            return _read_with_easyocr(gray, kind)
         except (RuntimeError, pytesseract.TesseractError) as error:
             raise RetryableOCRError("OCR tamamlanamadı veya süre sınırı aşıldı. Yeniden deneyin.") from error

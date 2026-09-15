@@ -207,10 +207,20 @@ async function retryDocument(id, button) {
 async function showDetail(id) {
   try {
     const doc = await jsonApi(`/api/documents/${id}`), data = doc.result;
+    const switchBtn = `<button id="detail-switch-kind" class="button secondary" title="Belge türünü ${doc.kind === 'receipts' ? 'Z Raporu' : 'Fiş'} olarak değiştir">⇄ ${doc.kind === 'receipts' ? 'Z Raporuna Taşı' : 'Fişe Taşı'}</button>`;
     $('#detail-title').textContent = doc.filename;
-    $('#detail-body').innerHTML = `<div class="detail-grid"><div><div class="source-preview" id="source-preview">Kaynak belge yükleniyor…</div><a id="source-download" class="source-link" hidden>Kaynak dosyayı indir ↗</a></div><div>${badge(doc.status)}<div class="detail-values">${fiscalDetail(doc)}</div>${data.vat_breakdown?.length ? `<table><thead><tr><th>Oran</th><th>Matrah</th><th>KDV</th></tr></thead><tbody>${data.vat_breakdown.map(part => `<tr><td>%${escape(part.rate)}</td><td>${escape(money(part.base))}</td><td>${escape(money(part.tax))}</td></tr>`).join('')}</tbody></table>` : ''}${accountingDetail(doc)}${doc.error || data.issues?.length ? `<div class="detail-issues"><ul>${[doc.error,...(data.issues || [])].filter(Boolean).map(issue => `<li>${escape(issue)}</li>`).join('')}</ul><p>Daha net bir fotoğrafı dosya ekle alanından yükleyebilirsiniz.</p></div>` : ''}${doc.status === 'duplicate' ? '<p class="detail-issues">Aynı vergi kimliği, belge numarası, tarih ve tutarla bir kayıt zaten var. Bu kopya Excel’e eklenmez.</p>' : ''}${(data.notes || []).map(note => `<p class="muted">${escape(note)}</p>`).join('')}<details><summary>Okunan kaynak metin</summary><pre class="raw-text">${escape(data.raw_text || 'Henüz metin okunmadı.')}</pre></details>${['review','failed','mapping'].includes(doc.status) ? '<button id="detail-retry" class="button secondary">↻ Yeniden dene</button>' : ''}</div></div>`;
+    $('#detail-body').innerHTML = `<div class="detail-grid"><div><div class="source-preview" id="source-preview">Kaynak belge yükleniyor…</div><a id="source-download" class="source-link" hidden>Kaynak dosyayı indir ↗</a></div><div>${badge(doc.status)}<div class="detail-values">${fiscalDetail(doc)}</div>${data.vat_breakdown?.length ? `<table><thead><tr><th>Oran</th><th>Matrah</th><th>KDV</th></tr></thead><tbody>${data.vat_breakdown.map(part => `<tr><td>%${escape(part.rate)}</td><td>${escape(money(part.base))}</td><td>${escape(money(part.tax))}</td></tr>`).join('')}</tbody></table>` : ''}${accountingDetail(doc)}${doc.error || data.issues?.length ? `<div class="detail-issues"><ul>${[doc.error,...(data.issues || [])].filter(Boolean).map(issue => `<li>${escape(issue)}</li>`).join('')}</ul><p>Daha net bir fotoğrafı dosya ekle alanından yükleyebilirsiniz.</p></div>` : ''}${doc.status === 'duplicate' ? '<p class="detail-issues">Aynı vergi kimliği, belge numarası, tarih ve tutarla bir kayıt zaten var. Bu kopya Excel’e eklenmez.</p>' : ''}${(data.notes || []).map(note => `<p class="muted">${escape(note)}</p>`).join('')}<details><summary>Okunan kaynak metin</summary><pre class="raw-text">${escape(data.raw_text || 'Henüz metin okunmadı.')}</pre></details><div style="display:flex;gap:8px;margin-top:12px;">${['review','failed','mapping'].includes(doc.status) ? '<button id="detail-retry" class="button secondary">↻ Yeniden dene</button>' : ''}${switchBtn}</div></div></div>`;
     if (!$('#detail-dialog').open) $('#detail-dialog').showModal();
     $('#detail-retry')?.addEventListener('click', async event => { await retryDocument(id, event.target); $('#detail-dialog').close(); });
+    $('#detail-switch-kind')?.addEventListener('click', async event => {
+      event.target.disabled = true;
+      try {
+        await jsonApi(`/api/documents/${id}/switch-kind`, {method:'POST'});
+        toast('Belge türü değiştirildi ve yeniden okuma sırasına alındı.');
+        $('#detail-dialog').close();
+        await refresh();
+      } catch (err) { toast(err.message); event.target.disabled = false; }
+    });
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     previewUrl = null;
     const source = await api(`/api/documents/${id}/source`);

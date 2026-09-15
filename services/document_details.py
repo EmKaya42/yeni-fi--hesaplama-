@@ -18,10 +18,32 @@ def extract_details(original, kind, total, issues, notes):
     is_z = kind == "z-reports"
 
     def unique(values, label):
-        values = list(dict.fromkeys(values))
-        if len(values) > 1:
+        deduped = []
+        folded_seen = set()
+        for v in values:
+            f = folded(str(v))
+            if f not in folded_seen:
+                folded_seen.add(f)
+                deduped.append(v)
+        if len(deduped) > 1:
             issues.append(f"{label} alanları çelişiyor.")
-        return values[0] if values else ""
+        return deduped[0] if deduped else ""
+
+    KNOWN_DISTRICTS = {
+        "SISLI": "Şişli", "KADIKOY": "Kadıköy", "BEYOGLU": "Beyoğlu", "BESIKTAS": "Beşiktaş",
+        "USKUDAR": "Üsküdar", "UMRANIYE": "Ümraniye", "FATIH": "Fatih", "BAKIRKOY": "Bakırköy",
+        "SARIYER": "Sarıyer", "MECIDIYEKOY": "Mecidiyeköy", "ZINCIRLIKUYU": "Zincirlikuyu",
+        "MASLAK": "Maslak", "MERTER": "Merter", "GUNGOREN": "Güngören", "KARTAL": "Kartal",
+        "PENDIK": "Pendik", "MALTEPE": "Maltepe", "TUZLA": "Tuzla", "BEYKOZ": "Beykoz",
+        "AVCILAR": "Avcılar", "BUYUKCEKMECE": "Büyükçekmece", "KUCUKCEKMECE": "Küçükçekmece",
+        "BAHCELIEVLER": "Bahçelievler", "BAGCILAR": "Bağcılar", "ESENLER": "Esenler",
+        "BAYRAMPASA": "Bayrampaşa", "GAZIOSMANPASA": "Gaziosmanpaşa", "EYUPSULTAN": "Eyüpsultan",
+        "CANKAYA": "Çankaya", "YENIMAHALLE": "Yenimahalle", "KIZILAY": "Kızılay", "ULUS": "Ulus",
+        "KONAK": "Konak", "KARSIYAKA": "Karşıyaka", "BORNOVA": "Bornova", "CIGLI": "Çiğli",
+        "NILUFER": "Nilüfer", "OSMANGAZI": "Osmangazi", "MURATPASA": "Muratpaşa", "SEYHAN": "Seyhan",
+        "MERAM": "Meram", "SELCUKLU": "Selçuklu", "SAHINBEY": "Şahinbey", "SEHITKAMIL": "Şehitkamil",
+        "KOCASINAN": "Kocasinan", "MELIKGAZI": "Melikgazi", "IZMIT": "İzmit", "GEBZE": "Gebze",
+    }
 
     offices = []
     for raw, line in zip(original, lines):
@@ -32,11 +54,30 @@ def extract_details(original, kind, total, issues, notes):
         elif suffix:
             value = re.sub(r"[\[\]]", "", raw[:suffix.start()]).strip(" :;-/")
         else:
-            continue
-        if folded(value) in {"SISL", "SISLI"}:
-            value = "ŞİŞLİ"
+            # Match district word immediately preceding VKN: 'ŞİŞLİ 3880097945' or 'ŞİŞLİ V.D. 3880097945'
+            vkn_match = re.search(r"\b([A-Za-zÇçĞğİıÖöŞşÜü]{3,})\s*(?:V\.?D\.?)?\s*(\d{10,11})\b", raw)
+            if vkn_match:
+                candidate = vkn_match.group(1).strip(" :;-/[]")
+                if folded(candidate) not in {"VERGI", "DAIRESI", "TARIH", "FATURA", "BELGE", "RAPOR", "MUSTERI", "SATIS"}:
+                    value = candidate
+                else:
+                    continue
+            else:
+                continue
+        f_val = folded(value)
+        if f_val in {"SISL", "SISLI", "SISLIF", "SIU", "IU", "SISU"} or (f_val.startswith("SIS") and len(f_val) <= 6):
+            value = "Şişli"
         if re.search(r"[A-Z]{2}", folded(value)):
             offices.append(value)
+
+    # Inspect header lines (first 8 lines) for known districts only if not already found
+    if not offices:
+        for raw, line in zip(original[:8], lines[:8]):
+            for key, name in KNOWN_DISTRICTS.items():
+                if re.search(r"\b" + key + r"\b", line):
+                    offices.append(name)
+                    break
+
     tax_office = unique(offices, "Vergi dairesi")
 
     def code(pattern, label):
@@ -51,13 +92,11 @@ def extract_details(original, kind, total, issues, notes):
     device_no = code(r"(?:CIHAZ|YAZAR\s*KASA|OKC)\s*(?:SERI\s*)?(?:NO|NUMARASI)", "Cihaz numarası")
     clocks = []
     for line in lines:
-        for match in re.finditer(r"(?<!\d)(\d{1,2}):([0-5]\d)(?::([0-5]\d))?(?!\d)", line):
-            if int(match[1]) > 23:
-                issues.append("Saat geçersiz.")
-            else:
+        for match in re.finditer(r"\bSAAT\s*[:;=-]?\s*([0-2]?\d)\s*[:;.,-]\s*([0-5]\d)(?:\s*[:;.,-]\s*([0-5]\d))?\b", line):
+            if int(match[1]) <= 23:
                 clocks.append(f"{int(match[1]):02}:{match[2]}" + (f":{match[3]}" if match[3] else ""))
         if not clocks:
-            for match in re.finditer(r"\bSAAT\s*[:;=-]?\s*([0-2]?\d)[;:.-]([0-5]\d)(?:[;:.-]([0-5]\d))?\b", line):
+            for match in re.finditer(r"(?<!\d)([0-2]?\d)\s*[:;]\s*([0-5]\d)(?:\s*[:;]\s*([0-5]\d))?(?!\d)", line):
                 if int(match[1]) <= 23:
                     clocks.append(f"{int(match[1]):02}:{match[2]}" + (f":{match[3]}" if match[3] else ""))
     document_time = unique(clocks, "Saat")
@@ -99,11 +138,17 @@ def extract_details(original, kind, total, issues, notes):
                 issues.append("İptal/iade içeren fişin net ürün ve KDV dağılımı incelenmeli.")
 
     counts = []
+    # Priority 1: Customer / OKC sales receipt count
     for line in lines:
-        # Match: FIS ADEDI 33 | OKC FISLERI 33 | MUSTERI FIS ADETI 33 | SATIS IPTAL 5 (not this)
         match = re.match(r"^(?:(?:(?:TOPLAM|SATIS)\s+)?(?:FIS|ISLEM|BELGE)\s*(?:ADEDI|SAYISI|SAY|ADET(?:I)?)|(?:OKC|MUSTERI)\s+(?:FIS(?:LER(?:I)?)?|ISLEM)\s*(?:ADEDI?|SAYISI?|ADETI?)?)\s*[:=]?\s*(\d+)\s*$", line)
         if match:
             counts.append(int(match[1]))
+    # Priority 2: General fiscal receipt count if no customer receipt count found
+    if not counts:
+        for line in lines:
+            match = re.match(r"^MALI\s+FIS\s+ADET(?:I)?\s*[:=]?\s*(\d+)\s*$", line)
+            if match:
+                counts.append(int(match[1]))
     transaction_count = unique(counts, "Fiş / işlem adedi")
     cumulative = {}
     for key, label in (("sales", "satış"), ("vat", "KDV")):

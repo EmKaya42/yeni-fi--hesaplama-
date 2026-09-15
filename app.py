@@ -369,6 +369,18 @@ def retry_document(doc_id):
     return jsonify(ok=True)
 
 
+@app.post("/api/documents/<doc_id>/switch-kind")
+def switch_document_kind(doc_id):
+    row = owned_document(doc_id)
+    target_kind = "z-reports" if row["kind"] == "receipts" else "receipts"
+    with database(DB_PATH) as db:
+        existing = db.execute("SELECT id FROM documents WHERE user_id=? AND kind=? AND digest=? AND page=?", (g.user_id, target_kind, row["digest"], row["page"])).fetchone()
+        if existing:
+            return jsonify(error="Bu belge hedef sekmede zaten kayıtlı."), 409
+        db.execute("UPDATE documents SET kind=?,status='queued',attempts=0,error='',started_at=NULL,retry_after=0,auto_retries=0,fingerprint=NULL,duplicate_of=NULL WHERE id=? AND user_id=?", (target_kind, doc_id, g.user_id))
+    return jsonify(ok=True, kind=target_kind)
+
+
 @app.get("/export/excel")
 def export_excel():
     kind = request.args.get("type", "receipts")

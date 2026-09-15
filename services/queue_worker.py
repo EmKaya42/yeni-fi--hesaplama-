@@ -25,6 +25,12 @@ def process_next(db_path: Path, reader=read_document) -> bool:
         db.execute("UPDATE documents SET status='processing', started_at=?, attempts=attempts+1, error='' WHERE id=?", (time.time(), row["id"]))
     try:
         result = reader(Path(row["path"]), row["page"], row["kind"], row["attempts"] + 1)
+        actual_kind = "z-reports" if result.get("document_type") == "Z Raporu" else "receipts"
+        effective_kind = row["kind"]
+        if actual_kind != row["kind"]:
+            effective_kind = actual_kind
+            result = reader(Path(row["path"]), row["page"], effective_kind, row["attempts"] + 1)
+
         status = "review" if result["issues"] else "success"
         fingerprint = None
         duplicate_of = None
@@ -37,8 +43,14 @@ def process_next(db_path: Path, reader=read_document) -> bool:
             fingerprint = hashlib.sha256(identity.encode()).hexdigest()
         with database(db_path) as db:
             db.execute("BEGIN IMMEDIATE")
+            if effective_kind != row["kind"]:
+                existing = db.execute("SELECT id FROM documents WHERE user_id=? AND kind=? AND digest=? AND page=?", (row["user_id"], effective_kind, row["digest"], row["page"])).fetchone()
+                if not existing:
+                    db.execute("UPDATE documents SET kind=? WHERE id=?", (effective_kind, row["id"]))
+                else:
+                    effective_kind = row["kind"]
             if fingerprint:
-                duplicate = db.execute("SELECT id FROM documents WHERE user_id=? AND kind=? AND fingerprint=? AND id!=?", (row["user_id"], row["kind"], fingerprint, row["id"])).fetchone()
+                duplicate = db.execute("SELECT id FROM documents WHERE user_id=? AND kind=? AND fingerprint=? AND id!=?", (row["user_id"], effective_kind, fingerprint, row["id"])).fetchone()
                 if duplicate:
                     status, duplicate_of, fingerprint = "duplicate", duplicate["id"], None
             db.execute("UPDATE documents SET status=?,result=?,fingerprint=?,duplicate_of=?,error='' WHERE id=? AND status='processing'", (status, json.dumps(result, ensure_ascii=False), fingerprint, duplicate_of, row["id"]))
