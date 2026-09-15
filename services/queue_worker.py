@@ -67,7 +67,7 @@ def process_next(db_path: Path, reader=read_document) -> bool:
                     status, duplicate_of, fingerprint = "duplicate", duplicate["id"], None
             db.execute("UPDATE documents SET status=?,result=?,fingerprint=?,duplicate_of=?,error='' WHERE id=? AND status='processing'", (status, json.dumps(final_result, ensure_ascii=False), fingerprint, duplicate_of, row["id"]))
             if status == "review" and final_result.get("engine", "").startswith("Tesseract") and row["auto_retries"] < 1:
-                db.execute("UPDATE documents SET status='queued',auto_retries=auto_retries+1,retry_after=?,error='Alternatif okuma otomatik deneniyor.' WHERE id=? AND status='review'", (time.time()+2, row["id"]))
+                db.execute("UPDATE documents SET status='queued',auto_retries=auto_retries+1,retry_after=?,error='Alternatif okuma otomatik deneniyor.' WHERE id=? AND status='review'", (time.time()+30, row["id"]))
     except Exception as error:
         logger.exception("Document processing failed: %s", row["id"])
         message = str(error) if isinstance(error, (RuntimeError, ValueError)) else "Dosya okunurken sunucu hatası oluştu. Yeniden deneyin."

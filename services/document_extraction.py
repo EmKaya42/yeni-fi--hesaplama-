@@ -49,14 +49,24 @@ def decimal_money(value: Any) -> Decimal:
 
 
 def extract_datetime(text: str) -> str:
-    match = re.search(r"\b(\d{1,2})[./\- ](\d{1,2})[./\- ](20\d{2}|\d{2})\b", text)
+    # Try TARIH-labeled line first, then standalone date on a line, then anywhere in text
+    tarih_match = re.search(r"\bTARIH\s*[:;=-]?\s*(\d{1,2})[./\- ](\d{1,2})[./\- ](20\d{2}|\d{2})\b", text, re.I)
     iso = re.search(r"\b(20\d{2})-(\d{2})-(\d{2})\b", text)
-    clock = re.search(r"\b([0-2]?\d):([0-5]\d)(?::[0-5]\d)?\b", text)
+    # Standalone date: line begins with or only contains a date like '07/05/2026' or '07.05.2026'
+    standalone = re.search(r"(?:^|\n)\s*(?:TARIH\s*[:;=-]?\s*)?(\d{1,2})[./](\d{1,2})[./](20\d{2})\s*(?:\n|$)", text)
+    fallback = re.search(r"\b(\d{1,2})[./\-](\d{1,2})[./\-](20\d{2}|\d{2})\b", text)
+    clock = re.search(r"(?:SAAT\s*[:;=-]?\s*)?\b([0-2]?\d):([0-5]\d)(?::([0-5]\d))?\b", text, re.I)
     try:
         if iso:
             year, month, day = map(int, iso.groups())
-        elif match:
-            day, month, year = map(int, match.groups())
+        elif tarih_match:
+            day, month, year = map(int, tarih_match.groups())
+            if year < 100:
+                year += 2000
+        elif standalone:
+            day, month, year = map(int, standalone.groups())
+        elif fallback:
+            day, month, year = map(int, fallback.groups())
             if year < 100:
                 year += 2000
         else:

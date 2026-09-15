@@ -98,6 +98,12 @@ def extract_details(original, kind, total, issues, notes):
     device_no = code(r"(?:CIHAZ|YAZAR\s*KASA|OKC)\s*(?:SERI\s*)?(?:NO|NUMARASI)", "Cihaz numarası")
     clocks = []
     for line in lines:
+        # SAAT-labeled match (strongest signal)
+        saat_match = re.match(r"^SAAT\s*[:;=-]?\s*([0-2]?\d)\s*[:;.,-]\s*([0-5]\d)(?:\s*[:;.,-]\s*([0-5]\d))?\b", line)
+        if saat_match and int(saat_match[1]) <= 23:
+            clocks.append(f"{int(saat_match[1]):02}:{saat_match[2]}" + (f":{saat_match[3]}" if saat_match[3] else ""))
+            continue
+        # Any SAAT keyword match anywhere in line
         for match in re.finditer(r"\bSAAT\s*[:;=-]?\s*([0-2]?\d)\s*[:;.,-]\s*([0-5]\d)(?:\s*[:;.,-]\s*([0-5]\d))?\b", line):
             if int(match[1]) <= 23:
                 clocks.append(f"{int(match[1]):02}:{match[2]}" + (f":{match[3]}" if match[3] else ""))
@@ -119,10 +125,20 @@ def extract_details(original, kind, total, issues, notes):
             money = re.findall(MONEY, tail)
             if money:
                 amounts.append(str(abs(decimal_money(money[-1]))))
-            # If no amount on same line, look for sub-lines like '-SATIS TOPLAMI *4.650,00'
             elif not money:
+                # Look ahead up to 6 lines for an amount (some formats have TUTAR on next line)
                 sub_amounts = []
-                for sub in lines[idx + 1:idx + 6]:
+                for sub in lines[idx + 1:idx + 7]:
+                    # Stop at next section header
+                    if re.match(r"^(?:BELGE|SAYACLAR|KASIYER|ODEME|TOPLAM|DEPARTMAN|MALI|Z\s*RAPORU)", sub):
+                        break
+                    # Explicit TUTAR sub-line
+                    if re.match(r"^(?:TUTAR|INDIRIM\s+TUTAR|ISKONTO\s+TUTAR)\b", sub):
+                        sub_vals = re.findall(MONEY, re.sub(r"\*", "", sub))
+                        if sub_vals:
+                            sub_amounts.append(str(abs(decimal_money(sub_vals[-1]))))
+                        break
+                    # '-SATIS TOPLAMI *amount' pattern
                     if re.match(r"^[-~*•]?\s*SATIS\s+TOPLAM[Iİ]?\b", sub):
                         sub_vals = re.findall(MONEY, re.sub(r"\*", "", sub))
                         if sub_vals:
