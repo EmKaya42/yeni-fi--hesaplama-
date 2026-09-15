@@ -296,6 +296,19 @@ def extract_document(text: str, kind: str) -> dict[str, Any]:
                         if vals:
                             candidate_totals.append(str(decimal_money(vals[-1])))
                 break
+        for idx, line in enumerate(lines):
+            if re.search(r"DEPARTMAN\s+BILGILERI", line):
+                dept_sum = Decimal(0)
+                for ln in lines[idx + 1:idx + 15]:
+                    if re.search(r"^(?:ODEME|BELGE|SAYACLAR|KASIYER)", ln):
+                        break
+                    if re.match(r"^TOPLAM\b", ln):
+                        vals = re.findall(MONEY, re.sub(r"[*•+~']", "", ln.split("TOPLAM", 1)[1]))
+                        if vals:
+                            dept_sum += decimal_money(vals[-1])
+                if dept_sum > 0:
+                    candidate_totals.append(str(dept_sum))
+                break
         if candidate_totals:
             from collections import Counter
             counts = Counter(candidate_totals)
@@ -311,7 +324,7 @@ def extract_document(text: str, kind: str) -> dict[str, Any]:
     taxes = label_values(lines, r"^(?:TOPKDV|TOPLAM\s*KDV|KDV(?:\s*(?:TOPLAMI?|TUTARI?))?)\b(?!\s*%)")
     if len(taxes) > 1:
         issues.append("KDV toplamları birbiriyle çelişiyor.")
-    rate_matches = re.findall(r"%\s*(\d{1,2})\b|\bKDV\s+(\d{1,2})(?![.,\d])\b", plain)
+    rate_matches = re.findall(r"%\s*(\d{1,2})(?:\.\d{2})?\b|\bKDV\s+(\d{1,2})(?![.,\d])\b", plain)
     rates = sorted({int(value) for match in rate_matches for value in match if value})
     if any(rate not in RATES for rate in rates):
         issues.append("KDV oranı tanınamadı.")

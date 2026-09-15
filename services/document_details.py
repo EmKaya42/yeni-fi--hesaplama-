@@ -89,6 +89,12 @@ def extract_details(original, kind, total, issues, notes):
         return unique(values, label)
 
     fiscal_id = code(r"(?:MALI\s*SICIL(?:\s*(?:NO|NUMARASI))?|MF(?:\s*NO)?|EKU\s*NO)", "Mali sicil numarası")
+    if not fiscal_id:
+        for line in lines[-10:]:
+            jh_match = re.search(r"\b([A-Z]{2})\s*(\d{8,10})\b", line)
+            if jh_match and jh_match.group(1) in {"JH", "BE", "PA", "AC", "EK", "MF"}:
+                fiscal_id = jh_match.group(1) + jh_match.group(2)
+                break
     device_no = code(r"(?:CIHAZ|YAZAR\s*KASA|OKC)\s*(?:SERI\s*)?(?:NO|NUMARASI)", "Cihaz numarası")
     clocks = []
     for line in lines:
