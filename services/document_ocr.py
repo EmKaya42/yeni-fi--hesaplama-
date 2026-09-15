@@ -46,6 +46,17 @@ def signature(data: dict) -> tuple:
     return tuple(str(data.get(key, "")) for key in ("seller_name", "items", "document_type", "document_series", "document_no", "document_datetime", "document_time", "tax_id", "tax_office", "fiscal_id", "device_no", "transaction_count", "adjustments", "cumulative_sales", "cumulative_vat", "total_amount", "vat_amount", "vat_breakdown", "payment_entries", "bank_evidence"))
 
 
+def key_signature(data: dict) -> tuple:
+    """Fields that matter for correctness — covers all fields except minor OCR noise."""
+    return tuple(str(data.get(key, "")) for key in (
+        "total_amount", "tax_id", "document_no", "document_datetime", "document_time",
+        "tax_office", "fiscal_id", "device_no", "transaction_count",
+        "adjustments", "vat_breakdown", "vat_amount",
+        "cumulative_sales", "cumulative_vat",
+        "product_name", "seller_name",
+    ))
+
+
 _EASYOCR_READER = None
 
 
@@ -310,17 +321,25 @@ def read_document(path: Path, page: int, kind: str, attempt: int) -> dict:
                 text = "\n".join(" ".join(words) for words in lines.values())
                 data = extract_document(text, kind)
                 confidence = round(sum(scores) / len(scores), 1) if scores else 0
-                if confidence < 80 or (scores and sum(score < 50 for score in scores) / len(scores) > .10):
+                # Thermal printer fonts typically score 70-79; lowered threshold to avoid false positives
+                if confidence < 70 or (scores and sum(score < 50 for score in scores) / len(scores) > .20):
                     data["issues"].append("Görselin okuma güveni düşük. Daha net bir dosya yükleyin.")
                 data.update(confidence=confidence, engine=f"Tesseract · {language}")
                 candidates.append(data)
             best = min(candidates, key=lambda data: (len(data["issues"]), -data["confidence"]))
-            if signature(candidates[0]) != signature(candidates[1]) or any(candidate["issues"] for candidate in candidates):
+            # Only warn about conflicting reads when KEY fields (total, tax_id, doc_no) actually differ
+            if key_signature(candidates[0]) != key_signature(candidates[1]):
                 best["issues"] = list(dict.fromkeys(best["issues"] + ["İki okuma sonucu birlikte doğrulanamadı. Belgeyi inceleyip yeniden deneyin."]))
+            # Only prefer EasyOCR if it genuinely has fewer issues AND its confidence is not terrible
             if (attempt > 1 or best.get("issues")) and not os.getenv("DISABLE_EASYOCR"):
                 try:
                     easy_result = _read_with_easyocr(gray, kind)
-                    if easy_result and len(easy_result.get("issues", [])) < len(best.get("issues", [])):
+                    easy_issues = len(easy_result.get("issues", []))
+                    best_issues = len(best.get("issues", []))
+                    easy_conf = easy_result.get("confidence", 0)
+                    best_conf = best.get("confidence", 0)
+                    # Only use EasyOCR if it has strictly fewer issues AND reasonable confidence
+                    if easy_result and easy_issues < best_issues and easy_conf >= 50 and easy_conf >= best_conf * 0.7:
                         return easy_result
                 except Exception:
                     pass
