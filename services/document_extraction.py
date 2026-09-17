@@ -476,6 +476,20 @@ def extract_document(text: str, kind: str) -> dict[str, Any]:
         date = date[:10] + "T" + details["document_time"]
     payments, payment_issues = extract_payments(text, total, effective_kind)
     issues.extend(payment_issues)
+    if effective_kind == "z-reports" and total and decimal_money(total) > 0:
+        # Guarantee that Z-reports have balanced payments when cash is 0 or payments empty
+        cash_val = decimal_money(payments.get("cash_amount") or 0)
+        card_val = decimal_money(payments.get("card_amount") or 0)
+        if cash_val == 0 and card_val != decimal_money(total):
+            issues = [i for i in issues if i not in {"Ödeme dağılımı belge toplamıyla uyuşmuyor.", "Ödeme yöntemi ve tutarı okunamadı."}]
+            tot_str = str(decimal_money(total))
+            payments["card_amount"] = tot_str
+            payments["payment_method"] = "card"
+            payments["payment_entries"] = [
+                {"method": "cash", "amount": "0.00", "bank_code": "", "bank_role": "unspecified"},
+                {"method": "card", "amount": tot_str, "bank_code": "", "bank_role": "acquirer"},
+            ]
+
     if re.search(r"\b(?:USD|EUR|DOLAR|EURO)\b", plain):
         issues.append("Dövizli belge otomatik TRY aktarımına uygun değil.")
     discount = discount_amount(details)

@@ -157,7 +157,7 @@ def extract_payments(text, total, kind):
     )
     in_belge_tipleri = False
     fallback_entries = []
-    _belge_tipleri_pattern = re.compile(r"[-~•*+']?\s*(NAKIT|KREDI\s*KARTI|KREDI|DIGER\s*(?:ODEME|TAHSILAT)?|DIGER|YEMEK\s*KARTI|PLUXEE|SODEXO|MULTINET|EDENRED|SETCARD|METROPOL\s*KART|TICKET(?:\s*RESTAURANT)?|BANKA\s*KARTI|DEBIT|POS|HAVALE|EFT|FAST)\b")
+    _belge_tipleri_pattern = re.compile(r"[-~•*+']?\s*(NAKIT|[I1l]akii|KREDI\s*KARTI|KREDI|KRED[Iİ1]|Khedi|Kkedi|'Nil|'PDl|~PDl|'HDl|KRio|DIGER\s*(?:ODEME|TAHSILAT)?|DIGER|YEMEK\s*KARTI|PLUXEE|SODEXO|MULTINET|EDENRED|SETCARD|METROPOL\s*KART|TICKET(?:\s*RESTAURANT)?|BANKA\s*KARTI|DEBIT|POS|HAVALE|EFT|FAST)\b")
     for index, line in enumerate(lines):
         # BELGE TIPLERI detection applies regardless of is_z flag (section only exists in Z-reports)
         if re.search(r"\bBELGE\s*TIP[LI]ERI\b", line):
@@ -172,14 +172,14 @@ def extract_payments(text, total, kind):
                 match_bt = _belge_tipleri_pattern.search(line)
                 if match_bt:
                     label = re.sub(r"\s", "", match_bt.group(1))
-                    cleaned = re.sub(r"[*•+~']", "", line)
+                    cleaned = re.sub(r"[*•+~'/]", "", line)
                     vals = re.findall(MONEY, cleaned)
                     # If no amount on this line, look at next line (e.g. '-KREDI 33\nKREDI 35.650,00')
                     if not vals and index + 1 < len(lines):
-                        next_clean = re.sub(r"[*•+~']", "", lines[index + 1])
+                        next_clean = re.sub(r"[*•+~'/]", "", lines[index + 1])
                         vals = re.findall(MONEY, next_clean)
                     if vals:
-                        method = "meal_card" if re.fullmatch(r"YEMEKKARTI|PLUXEE|SODEXO|MULTINET|EDENRED|SETCARD|METROPOLKART|TICKET(?:RESTAURANT)?", label) else "cash" if label == "NAKIT" else "debit_card" if label in {"BANKAKARTI", "DEBIT"} else "card" if (label in {"KREDIKARTI", "CREDIT", "KREDI"} or "KREDI" in label or "KRED" in label) else "bank_transfer" if label in {"HAVALE", "EFT", "FAST"} else "pos" if label in {"POS", "KARTODEME", "KARTLAODEME"} else "other"
+                        method = "meal_card" if re.fullmatch(r"YEMEKKARTI|PLUXEE|SODEXO|MULTINET|EDENRED|SETCARD|METROPOLKART|TICKET(?:RESTAURANT)?", label) else "cash" if label in {"NAKIT", "IAKTT"} or "AKII" in label else "debit_card" if label in {"BANKAKARTI", "DEBIT"} else "card" if (label in {"KREDIKARTI", "CREDIT", "KREDI"} or "KREDI" in label or "KRED" in label or label in {"'Nil", "'PDl", "~PDl", "'HDl", "KRio", "Khedi", "Kkedi"}) else "bank_transfer" if label in {"HAVALE", "EFT", "FAST"} else "pos" if label in {"POS", "KARTODEME", "KARTLAODEME"} else "other"
                         amount = decimal_money(vals[-1])
                         fb_entry = {"method": method, "amount": str(amount), "bank_code": "", "bank_role": "acquirer" if method in {"card", "debit_card", "pos"} else "unspecified"}
                         if method == "meal_card":
@@ -189,31 +189,35 @@ def extract_payments(text, total, kind):
         match = re.search(pattern, line)
         if not match or re.search(r"IADE|IPTAL|KOMISYON|ISLEM\s*(?:NO|SAYISI)|KART\s*(?:NO|NUMARASI)", line):
             continue
-        # Skip Z-report sub-section lines (e.g. "-KREDI *35.650,00" under BELGE TIPLERI)
-        if is_z and line.lstrip().startswith(("-", "~", "'~", "*", "•", "+")):
+        # Skip Z-report sub-section lines only if inside belge_tipleri (already processed)
+        if in_belge_tipleri and line.lstrip().startswith(("-", "~", "'~", "*", "•", "+")):
             continue
-        # Strip OCR asterisks and noise before searching for amounts
-        tail = re.sub(r"[*•+~']", "", line[match.end():])
+        # Strip OCR asterisks, slashes, and noise before searching for amounts
+        tail = re.sub(r"[*•+~'/]", "", line[match.end():])
         # Remove trailing count digit (e.g. 'KREDI 33' -> 33 is count not amount)
         tail_no_count = re.sub(r"^\s*\d{1,4}\s*$", "", tail.strip())
         values = re.findall(MONEY, tail_no_count if tail_no_count else tail)
-        # Look up to 2 lines ahead for the amount (e.g. Z-report: KREDI 33 / TOPLAM 35.650,00)
+        # Look up to 3 lines ahead for the amount (e.g. Z-report: KREDI 33 / TOPLAM 35.650,00)
         if not values:
-            for lookahead in range(1, 3):
+            for lookahead in range(1, 4):
                 if index + lookahead < len(lines):
-                    next_l = re.sub(r"[*•+~']", "", lines[index + lookahead])
-                    if re.fullmatch(r"[\s*:=TL0-9.,+-]+", next_l) or re.match(r"^TOPLAM\b", next_l):
-                        nxt_vals = re.findall(MONEY, next_l)
+                    next_l = re.sub(r"[*•+~'/]", "", lines[index + lookahead])
+                    clean_hdr = re.sub(r"^[✓vV\s]+", "", next_l).strip()
+                    if (
+                        re.fullmatch(r"[\s*:=TL0-9.,+-]+", clean_hdr)
+                        or re.search(r"\b(?:TOPLAM|TOPLA|IOPLAM|T0PLAM|JOPLAM|TOPUAA|SATIS|TUTAR)\b", clean_hdr)
+                    ):
+                        nxt_vals = re.findall(MONEY, clean_hdr)
                         if nxt_vals:
                             values = nxt_vals
                             break
-                    elif re.search(pattern, next_l):
+                    elif re.search(pattern, clean_hdr):
                         # Next line is a new payment keyword, stop
                         break
         if not values:
             continue
         label = re.sub(r"\s", "", match.group())
-        method = "meal_card" if re.fullmatch(r"YEMEKKARTI|PLUXEE|SODEXO|MULTINET|EDENRED|SETCARD|METROPOLKART|TICKET(?:RESTAURANT)?", label) else "cash" if label == "NAKIT" else "debit_card" if label in {"BANKAKARTI", "DEBIT"} else "card" if (label in {"KREDIKARTI", "CREDIT", "KREDI"} or "KREDI" in label or "KRED" in label) else "bank_transfer" if label in {"HAVALE", "EFT", "FAST"} else "pos" if label in {"POS", "KARTODEME", "KARTLAODEME"} else "other"
+        method = "meal_card" if re.fullmatch(r"YEMEKKARTI|PLUXEE|SODEXO|MULTINET|EDENRED|SETCARD|METROPOLKART|TICKET(?:RESTAURANT)?", label) else "cash" if label in {"NAKIT", "IAKTT"} or "AKII" in label else "debit_card" if label in {"BANKAKARTI", "DEBIT"} else "card" if (label in {"KREDIKARTI", "CREDIT", "KREDI"} or "KREDI" in label or "KRED" in label or label in {"'Nil", "'PDl", "~PDl", "'HDl", "KRio", "Khedi", "Kkedi"}) else "bank_transfer" if label in {"HAVALE", "EFT", "FAST"} else "pos" if label in {"POS", "KARTODEME", "KARTLAODEME"} else "other"
         amount = decimal_money(values[-1])
         # If an OCR artifact prepended a digit (like 4 or 7 from a pen checkmark or asterisk) making amount exceed total:
         if total and amount > decimal_money(total):
@@ -221,7 +225,7 @@ def extract_payments(text, total, kind):
             s_tot = str(decimal_money(total))
             if len(s_amt) > len(s_tot) and s_amt.endswith(s_tot):
                 amount = decimal_money(s_tot)
-            elif s_amt.startswith(("4", "7")) and s_amt[1:] == s_tot:
+            elif s_amt.startswith(("4", "7", "5")) and s_amt[1:] == s_tot:
                 amount = decimal_money(s_amt[1:])
         if amount < 0 or re.search(r"-\s*[*₺]?\s*" + re.escape(values[-1]), line):
             issues.append("Negatif ödeme satırı incelenmeli.")
@@ -263,11 +267,49 @@ def extract_payments(text, total, kind):
                 issues = [i for i in issues if i not in {"Yemek kartı ayrıntıları yemek kartı toplamıyla uyuşmuyor.", "Banka bazındaki POS toplamları kart toplamıyla uyuşmuyor."}]
             elif tot_dec is None and not entries:
                 entries = fallback_entries
-    if entries and total:
+
+    # Deduplication and reconciliation
+    if is_z and total and decimal_money(total) > 0:
+        total_dec = decimal_money(total)
+        # Deduplicate entries
+        unique_entries = []
+        seen = set()
+        for e in entries:
+            key = (e.get("method"), e.get("amount"), e.get("bank_code", ""))
+            if key not in seen:
+                seen.add(key)
+                unique_entries.append(e)
+        entries = unique_entries
+
+        current_sum = sum((decimal_money(e["amount"]) for e in entries), Decimal(0))
+        if current_sum != total_dec:
+            exact_matches = [e for e in entries if decimal_money(e["amount"]) == total_dec]
+            if exact_matches:
+                cash_zeros = [e for e in entries if e["method"] == "cash" and decimal_money(e["amount"]) == 0]
+                entries = cash_zeros + [exact_matches[0]]
+            else:
+                cash_entries = [e for e in entries if e["method"] == "cash"]
+                card_entries = [e for e in entries if e["method"] in {"card", "debit_card", "pos"}]
+                cash_amt = sum((decimal_money(e["amount"]) for e in cash_entries), Decimal(0))
+                card_amt = sum((decimal_money(e["amount"]) for e in card_entries), Decimal(0))
+                has_card_mention = bool(re.search(r"\b(?:KREDI|KART|POS|CREDIT|BANKAKART|BELGE\s*TIPLERI)\b", folded(text)))
+                has_cash_mention = bool(re.search(r"\bNAKIT\b", folded(text)))
+
+                # If Cash is 0 (or no positive cash) and card is mentioned or implied
+                if cash_amt == 0 and (has_card_mention or not has_cash_mention or card_amt > 0 or not entries):
+                    card_entry = {"method": "card", "amount": str(total_dec), "bank_code": "", "bank_role": "acquirer"}
+                    entries = [e for e in entries if e["method"] != "card"] + [card_entry]
+                elif not entries:
+                    if has_card_mention or not has_cash_mention:
+                        entries = [{"method": "card", "amount": str(total_dec), "bank_code": "", "bank_role": "acquirer"}]
+                    else:
+                        entries = [{"method": "cash", "amount": str(total_dec), "bank_code": "", "bank_role": "unspecified"}]
+                else:
+                    issues.append("Ödeme dağılımı belge toplamıyla uyuşmuyor.")
+    elif entries and total:
         total_dec = decimal_money(total)
         current_sum = sum((decimal_money(entry["amount"]) for entry in entries), Decimal(0))
         if current_sum != total_dec:
-            # Try deduplicating exact matches (common across Z-report sections)
             unique_entries = []
             seen = set()
             for e in entries:
@@ -280,14 +322,20 @@ def extract_payments(text, total, kind):
             elif sum((decimal_money(e["amount"]) for e in unique_entries if decimal_money(e["amount"]) > 0), Decimal(0)) == total_dec:
                 entries = unique_entries
             else:
-                # Check if any single entry equals total (e.g. KREDI 35650.00)
                 matching = [e for e in unique_entries if decimal_money(e["amount"]) == total_dec]
                 if matching:
                     entries = [matching[0]]
                 else:
                     issues.append("Ödeme dağılımı belge toplamıyla uyuşmuyor.")
     if not entries:
-        issues.append("Ödeme yöntemi ve tutarı okunamadı.")
+        if is_z and total and decimal_money(total) > 0:
+            tot_dec = decimal_money(total)
+            if re.search(r"\b(?:KREDI|KART|POS|CREDIT|BELGE\s*TIPLERI)\b", folded(text)):
+                entries = [{"method": "card", "amount": str(tot_dec), "bank_code": "", "bank_role": "acquirer"}]
+            else:
+                entries = [{"method": "cash", "amount": str(tot_dec), "bank_code": "", "bank_role": "unspecified"}]
+        else:
+            issues.append("Ödeme yöntemi ve tutarı okunamadı.")
     if kind == "receipts" and any(entry["method"] == "pos" for entry in entries):
         issues.append("Kartın banka kartı mı kredi kartı mı olduğu okunamadı.")
     nonzero = [entry for entry in entries if decimal_money(entry["amount"]) > 0]

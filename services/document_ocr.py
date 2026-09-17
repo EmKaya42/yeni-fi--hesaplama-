@@ -237,6 +237,14 @@ def _clean_ocr_line(line: str) -> str:
         (r"\bCao\s+58ansig\s+Pu[>]ianesI\s+9a\b", "FRANSIZ HASTANESI SK"),
         (r"\b[\"']o\s+41\s+31911\s+SiQnbul\b", "NO 349/1 SISLI / ISTANBUL"),
         (r"\bJ[Iİ1]I\s+20011571\b", "JH 20011571"),
+        (r"\b(?:'Nil|'PDl|~PDl|'HDl)\s*[*]?(\d{1,3}(?:\.\d{3})*,\d{2})\b", r"KREDI *\1"),
+        (r"\b(?:'Jii|~Wnt|'Wnt)\s*[*]?(\d{1,3}(?:\.\d{3})*,\d{2})\b", r"NAKIT *\1"),
+        (r"\b(?:Topla|Topiaa)\s*[/]?5(\d{1,2}\.\d{3},\d{2})\b", r"TOPLAM *3\1"),
+        (r"\b(?:Topla|Topiaa)\b", "TOPLAM"),
+        (r"\bSis\s+TOPLAM[I\]]?\b", "SATIS TOPLAMI"),
+        (r"\bIdelan\b", "TOPLAM"),
+        (r"\bIteady\b", "TOPKDV"),
+        (r"\bP\s*PP[iI1l%][sS]?\s*[:/|\-]?\s*(\d{1,6})\b", r"RAPOR NO \1"),
     ]
     for pattern, replacement in _keyword_fixes:
         line = re.sub(pattern, replacement, line, flags=re.IGNORECASE)
@@ -255,7 +263,13 @@ def _get_paddleocr_reader():
         import logging
         logging.getLogger("ppocr").setLevel(logging.ERROR)
         from paddleocr import PaddleOCR
-        _PADDLEOCR_READER = PaddleOCR(lang="tr", enable_mkldnn=False, show_log=False)
+        try:
+            _PADDLEOCR_READER = PaddleOCR(lang="tr", enable_mkldnn=False, show_log=False)
+        except (ValueError, TypeError):
+            try:
+                _PADDLEOCR_READER = PaddleOCR(lang="tr", enable_mkldnn=False)
+            except Exception:
+                _PADDLEOCR_READER = PaddleOCR(lang="tr")
     return _PADDLEOCR_READER
 
 
@@ -329,6 +343,11 @@ def _read_with_paddleocr(path: str, kind: str) -> dict:
 def _read_with_easyocr(image: Image.Image, kind: str) -> dict:
     import numpy as np
     reader = _get_easyocr_reader()
+    if image.width < 600:
+        factor = min(3.0, max(1.5, 900.0 / image.width))
+        new_w, new_h = int(image.width * factor), int(image.height * factor)
+        image = image.resize((new_w, new_h), Image.Resampling.LANCZOS)
+        image = ImageEnhance.Contrast(image).enhance(1.2)
     arr = np.array(image.convert("RGB"))
     if image.width < 800 or image.height < 1500:
         results = reader.readtext(arr, canvas_size=2560, mag_ratio=1.6, text_threshold=0.35, link_threshold=0.3, low_text=0.3)

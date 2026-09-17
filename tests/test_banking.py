@@ -371,3 +371,54 @@ def test_z_report_checkmark_corrupted_total_and_payment_reconciliation():
     assert data["card_amount"] == "35650.00"
 
 
+def test_z_report_zero_cash_allocates_full_total_to_card():
+    # Degraded OCR where KREDI amount was corrupted by checkmark or noise but Nakit is 0.00
+    degraded = (
+        "FORA TURIZM REKLAM\n"
+        "SAR. TIC LTO STI\n"
+        "SISLI V.D. 3880097945\n"
+        "TARIH 30/05/2026\n"
+        "SAAT 04:21:42\n"
+        "Z RAPORU\n"
+        "RAPOR NO 1880\n"
+        "MALI BELLEK TOPLAMI *12.867.454,44\n"
+        "MALI BELLEK TOP KDV 2.070.030,56\n"
+        "GUNLUK FIS DOKUMU\n"
+        "TOPLAM *35.650,00\n"
+        "TOPKDV *5.941,66\n"
+        "~KDV BILGILERI-\n"
+        "KDV %20.00 *5.941,66\n"
+        "TOPLAM *35.650,00\n"
+        "~DEPARTMAN BILGILERI\n"
+        "BIRA %20.00\n"
+        "TOPLAM *34.400,00\n"
+        "MIKTARI 32,0000\n"
+        "YERLI ICKI %20.00\n"
+        "TOPLAM *1.250,00\n"
+        "MIKTARI 1,0000\n"
+        "ODEME BILGILERI\n"
+        "NAKIT\n"
+        "TOPLAM 0,00\n"
+        "KREDI 33\n"
+        "Topla /55.650,C\n"
+        "BELGE TIPLERI\n"
+        "'Jii *0,00\n"
+        "'Nil *35.650,00\n"
+        "SAYACLAR\n"
+        "MALI FIS ADET 34\n"
+        "MUSTERI FISI ADETI 33\n"
+        "KASIYER BILGI\n"
+        "KASIYER1 *35.650,00\n"
+        "KASIYER: KASIYER1\n"
+        "EK NO:0001 Z NO: 1880\n"
+        "JH 20004135\n"
+    )
+    data = extract_document(degraded, "z-reports")
+    assert not data["issues"], data["issues"]
+    assert data["total_amount"] == "35650.00"
+    assert data["card_amount"] == "35650.00"
+    assert any(e["method"] == "card" and e["amount"] == "35650.00" for e in data["payment_entries"])
+
+
+
+
