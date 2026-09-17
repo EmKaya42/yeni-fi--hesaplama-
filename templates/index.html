@@ -39,7 +39,10 @@
       <header class="topbar"><span>Çalışma alanı <span class="muted">/</span> <b id="breadcrumb">Fişler</b></span><span id="today" class="muted"></span></header>
       <div class="page-content">
         <div class="page-heading"><div><p class="eyebrow">BELGE YÖNETİMİ</p><h1 id="page-title">Fişler</h1><p id="page-description">Belgeleri ekleyin. Okuma ve tutar kontrollerini tek yerden takip edin.</p></div>
-          <button id="export-button" class="button primary" disabled><span>↓</span><span id="export-label">Fiş Excel indir</span></button>
+          <div style="display:flex;gap:10px;align-items:center;">
+            <button id="clear-all-button" class="button secondary" title="Tüm belgelerimi sil">🗑 Tümünü Sil</button>
+            <button id="export-button" class="button primary" disabled><span>↓</span><span id="export-label">Fiş Excel indir</span></button>
+          </div>
         </div>
         <div id="setup-banner" class="notice" hidden>Başlamak için muhasebe programınızı seçin. Hesap kodları otomatik yüklenecek. <button id="setup-open" class="text-button">Programı seç →</button></div>
         <section class="context-bar" aria-label="Firma ve dönem"><label>Firma hesap planı<select id="workspace-chart"><option value="">Standart hesaplar / önceki belgeler</option></select></label><label>Dönem<select id="period-filter"><option value="">Tüm dönemler</option></select></label><span id="export-history-caption" class="muted"></span></section>

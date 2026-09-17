@@ -280,6 +280,21 @@ $('#export-button').addEventListener('click', async () => {
   finally { await refresh(); }
 });
 
+$('#clear-all-button')?.addEventListener('click', async () => {
+  if (!confirm('Tüm kayıtlı belgelerinizi silmek istediğinizden emin misiniz?')) return;
+  const button = $('#clear-all-button');
+  button.disabled = true;
+  try {
+    const res = await jsonApi('/api/documents', { method: 'DELETE' });
+    toast(res.message || 'Tüm belgeler silindi.');
+    await refresh();
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    button.disabled = false;
+  }
+});
+
 async function openSettings() {
   if (uploading) { toast('Firma veya program değiştirmek için yüklemenin tamamlanmasını bekleyin.'); return; }
   if (!settings) {
