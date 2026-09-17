@@ -470,7 +470,7 @@ def extract_document(text: str, kind: str) -> dict[str, Any]:
         issues.append("Toplam tutar sıfırdan büyük olmalı.")
     from services.banking import extract_payments
     from services.document_details import extract_details, discount_amount
-    effective_kind = "z-reports" if is_z else kind
+    effective_kind = "z-reports" if (is_z or is_detected_z) else kind
     details = extract_details(original, effective_kind, total, issues, notes)
     if details["document_time"] and date:
         date = date[:10] + "T" + details["document_time"]
