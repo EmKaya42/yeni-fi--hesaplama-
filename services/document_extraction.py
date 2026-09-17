@@ -83,17 +83,22 @@ def extract_datetime(text: str) -> str:
 def label_values(lines: list[str], pattern: str) -> list[str]:
     result = []
     for index, line in enumerate(lines):
-        clean_ln = line.lstrip(" -~•*#'")
+        clean_ln = re.sub(r"^[^A-Za-z0-9%]+", "", line)
         match = re.match(pattern, clean_ln)
+        if not match:
+            clean_ln = line.lstrip(" -~•*#'")
+            match = re.match(pattern, clean_ln)
         if not match:
             match = re.match(pattern, line)
         if not match:
             continue
         # Strip leading star (OCR asterisk before amounts like *35.650,00)
         tail = re.sub(r"\*", "", line[match.end():] if match.string == line else clean_ln[match.end():])
+        tail = re.sub(r"(?<![,\d%])(\d{1,3})\s+(\d{3}),(\d{2})\b", r"\1.\2,\3", tail)
         values = re.findall(MONEY, tail)
         if not values and index + 1 < len(lines) and re.fullmatch(r"[\s*:=TL0-9.,+-]+", lines[index + 1]):
-            values = re.findall(MONEY, re.sub(r"\*", "", lines[index + 1]))
+            next_ln = re.sub(r"(?<![,\d%])(\d{1,3})\s+(\d{3}),(\d{2})\b", r"\1.\2,\3", re.sub(r"\*", "", lines[index + 1]))
+            values = re.findall(MONEY, next_ln)
         if values:
             try:
                 result.append(str(decimal_money(values[-1])))
@@ -293,7 +298,7 @@ def extract_document(text: str, kind: str) -> dict[str, Any]:
                     break
             if tax_id:
                 break
-    doc_no = identifier(r"\b(?:Z\s*(?:RAPORU?)?(?:\s*(?:NO|NUMARASI))?|RAPOR\s*(?:NO|NUMARASI)?|Z\s*NO)\s*[:#=-]?\s*(\d{1,12})\b" if is_z else r"\b(?:FI[SŞ\?]?\s*(?:NO|NUMARASI)?|FATURA\s*(?:NO|NUMARASI)?|BELGE\s+(?:NO|NUMARASI))\s*[:#=-]?\s*([A-Z0-9][A-Z0-9/-]{0,29})\b")
+    doc_no = identifier(r"\b(?:Z\s*(?:RAPORU?)?(?:\s*(?:NO|NUMARASI))?|[PR]APOR\s*(?:NO|NUMARASI)?|Z\s*NO)\s*[:#=-]?\s*(\d{1,12})\b" if is_z else r"\b(?:FI[SŞ\?]?\s*(?:NO|NUMARASI)?|FATURA\s*(?:NO|NUMARASI)?|BELGE\s+(?:NO|NUMARASI))\s*[:#=-]?\s*([A-Z0-9][A-Z0-9/-]{0,29})\b")
     if is_z and not doc_no:
         z_bottom = re.search(r"\bZ\s*NO\s*[:#=-]?\s*(\d{1,12})\b", plain)
         if z_bottom:
@@ -369,7 +374,20 @@ def extract_document(text: str, kind: str) -> dict[str, Any]:
     if len(totals) > 1:
         issues.append("Toplam tutar alanları birbiriyle çelişiyor.")
     total = totals[0] if totals else ""
-    taxes = label_values(lines, r"^(?:TOPKDV|TOPLAM\s*KDV|KDV(?:\s*(?:TOPLAMI?|TUTARI?))?)\b(?!\s*%)")
+    if is_z:
+        tax_lines = []
+        in_iptal = False
+        for ln in lines:
+            cl = re.sub(r"^[^A-Za-z0-9%]+", "", ln)
+            if re.search(r"\b(?:PRIPTAL|IPTAL|SATIS\s*IPTAL)\b", cl):
+                in_iptal = True
+            elif re.match(r"^(?:SAYACLAR|KASIYER|BELGE|ODEME|MALI|GUNLUK|EKU|Z\s*NO)\b", cl):
+                in_iptal = False
+            if not in_iptal:
+                tax_lines.append(ln)
+        taxes = label_values(tax_lines or lines, r"^(?:TOP[ -]?(?:K[DO0U]V|K[DO0U]Y|KDV)|TOPLAM\s*K[DO0U]V|K[DO0U]V(?:\s*(?:TOPLAMI?|TUTARI?))?|KDV(?:\s*(?:TOPLAMI?|TUTARI?))?)\b(?!\s*%)")
+    else:
+        taxes = label_values(lines, r"^(?:TOPKDV|TOPLAM\s*KDV|KDV(?:\s*(?:TOPLAMI?|TUTARI?))?)\b(?!\s*%)")
     if is_z and len(taxes) > 1:
         non_zero = [t for t in taxes if decimal_money(t) > 0]
         if non_zero and len(set(non_zero)) == 1:
@@ -430,18 +448,32 @@ def extract_document(text: str, kind: str) -> dict[str, Any]:
             if gross and decimal_money(gross[0]) != decimal_money(base[0]) + decimal_money(tax[0]):
                 issues.append(f"%{rate} satış tutarı, matrah ve KDV toplamıyla uyuşmuyor.")
             breakdown.append({"rate": rate, "base": base[0], "tax": tax[0]})
-    if not breakdown and total and taxes:
+    if not breakdown and total:
         tot_dec = decimal_money(total)
-        tax_dec = decimal_money(taxes[0])
-        base_dec = tot_dec - tax_dec
-        if base_dec > 0:
-            candidate_rates = [r for r in rates if r in RATES and r > 0] or [20, 10, 8, 1]
-            for cand_rate in candidate_rates:
-                exp_tax = (base_dec * Decimal(cand_rate) / 100).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-                if abs(exp_tax - tax_dec) <= Decimal("0.05"):
-                    breakdown = [{"rate": cand_rate, "base": str(base_dec), "tax": str(tax_dec)}]
-                    notes.append("Matrah, belgede okunan toplam tutardan KDV düşülerek hesaplandı.")
-                    break
+        if taxes:
+            tax_dec = decimal_money(taxes[0])
+            base_dec = tot_dec - tax_dec
+            if base_dec > 0:
+                candidate_rates = [r for r in rates if r in RATES and r > 0] or [20, 10, 8, 1]
+                for cand_rate in candidate_rates:
+                    exp_tax = (base_dec * Decimal(cand_rate) / 100).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                    if abs(exp_tax - tax_dec) <= Decimal("0.05"):
+                        breakdown = [{"rate": cand_rate, "base": str(base_dec), "tax": str(tax_dec)}]
+                        notes.append("Matrah, belgede okunan toplam tutardan KDV düşülerek hesaplandı.")
+                        break
+        if not breakdown:
+            candidate_rates = [r for r in rates if r in RATES and r > 0]
+            if len(candidate_rates) == 1:
+                cand_rate = candidate_rates[0]
+                calc_base = (tot_dec / (1 + Decimal(cand_rate) / 100)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                calc_tax = tot_dec - calc_base
+                if taxes:
+                    tax_dec = decimal_money(taxes[0])
+                    if abs(calc_tax - tax_dec) <= Decimal("0.05"):
+                        calc_tax = tax_dec
+                        calc_base = tot_dec - calc_tax
+                breakdown = [{"rate": cand_rate, "base": str(calc_base), "tax": str(calc_tax)}]
+                notes.append("Matrah ve KDV, belge toplamı ve KDV oranından hesaplandı.")
     explicit_base = label_values(lines, r"^(?:KDV\s*)?MATRAH\b")
     if explicit_base and len(breakdown) == 1 and decimal_money(explicit_base[0]) != decimal_money(breakdown[0]["base"]):
         issues.append("Belgedeki matrah ile hesaplanan matrah uyuşmuyor.")

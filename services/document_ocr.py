@@ -119,12 +119,12 @@ def _clean_ocr_line(line: str) -> str:
     # --- Z Raporu specific fuzzy corrections ---
     _keyword_fixes = [
         # TOPLAM variants: Toplaa, ToplaH, ToplaK, TopiaM, Topian, TOPIAM, TOPLAAMI, ToPUAM, Foplane etc.
-        (r"\b(?:Topl(?:aa|aH|aK|iaM|ian|am|An|AAMI|AAMi|ane|ant|Ahi|ahi)|TOPIAM|TOPLAAMI|TOPLAN[Iİ]|ToPUAM)\b", "TOPLAM"),
+        (r"\b(?:Topl(?:aa|aH|aK|iaM|ian|am|An|AAMI|AAMi|ane|ant|Ahi|ahi)|TOPIAM|TOPLAAMI|TOPLAN[Iİ]?|ToPUAM)\b", "TOPLAM"),
         (r"\bTOPLA\s+(?=\d)", "TOPLAM "),
         # RAPOR NO variants: PaPOR, RaPOR, RaPOA, 2 RAPORU -> Z RAPORU
         (r"\b[2Z]\s*[-]?\s*RAPORU?\b", "Z RAPORU"),
-        (r"\b(?:PaPOR|RaPOR|RAPOR)\s*[/]?\s*(?:Iio|Lio|No|iO|io|Vo|[iI10]o)\b", "RAPOR NO"),
-        (r"\bPaPOR\b", "RAPOR"),
+        (r"\b(?:PaPOR|RaPOR|PAPOR|RAPOR)\s*[/]?\s*(?:Iio|Lio|No|iO|io|Vo|[iI10]o)\b", "RAPOR NO"),
+        (r"\b[Pp][Aa][Pp][Oo][Rr]\b", "RAPOR"),
         (r"\bRaPOR\b", "RAPOR"),
         # SATIS -> SATl, SAT1S, SATI5, SATI
         (r"\bSAT[lI1][S5]\b", "SATIS"),
@@ -133,13 +133,14 @@ def _clean_ocr_line(line: str) -> str:
         (r"\b[#~•*]?\s*(?:IlAk|NAk|NAR|HlaK|Hak)IT\b", "NAKIT"),
         # KREDI -> Kred1, Kredi
         (r"\bKred[i1]\b", "KREDI"),
-        # KDV % misread: 820.xx / 320.xx -> %20, 810.xx -> %10, 808 -> %8
-        (r"\b[38](10|20|08|01)\.00\b", r"%\1"),
+        # KDV % misread: 820.xx / 320.xx / 420.xx -> %20, 810.xx -> %10, 808 -> %8
+        (r"\b[348](10|20|08|01)\.00\b", r"%\1"),
         # TOPKDV variants: Iopnov, TopkdV, Topndy, Topkov, Topkdv, KoY JoPLaMi, KDv TopLAHI, Fopndv, KoY 7oPLAMi, [OPADV
-        (r"\b(?:Iopnov|Iopndv|Topkd[Vv]|Topndy|Topkov|Topkdv|KoY\s+JoPLaMi|KDv\s+TopLAHI|Fopnd[vV]|Fopxd[yvV]|FOPXDY|KoY\s+[7T]oPLAM[iI])\b", "TOPKDV"),
+        (r"\b(?:TOP[ -]?(?:KOV|KOY|KDU|KOW|K0V)|(?:Iopnov|Iopndv|Topkd[Vv]|Topndy|Topkov|Topkdv|KoY\s+JoPLaMi|KDv\s+TopLAHI|Fopnd[vV]|Fopxd[yvV]|FOPXDY|KoY\s+[7T]oPLAM[iI]))\b", "TOPKDV"),
         (r"\[(?:OPADV|OPKDV|OPNDV|OPNOV)\b", "TOPKDV"),
-        # KDV % misread: 820.xx / 320.xx / 820,00 -> %20, 810.xx -> %10, 808 -> %8
-        (r"\b[389](10|20|08|01)\s*[,.]\s*(?:00|\d{2})\b", r"%\1"),
+        (r"\b(?:KOV|KOY|KDU|KOW|K0V)\s+TOPLAM[Iİ]?\b", "KDV TOPLAMI"),
+        # KDV % misread: 820.xx / 320.xx / 420.xx / 820,00 -> %20, 810.xx -> %10, 808 -> %8
+        (r"\b[3489](10|20|08|01)\s*[,.]\s*(?:00|\d{2})\b", r"%\1"),
         # Kdv %20.941,66 -> Kdv %20 *5.941,66
         (r"%\s*(10|20|08|01)\.941,66", r"%\1 *5.941,66"),
         # Fix '10PKDV' or '1OPKDV' -> 'TOP KDV'
