@@ -188,7 +188,9 @@ def _clean_ocr_line(line: str) -> str:
         (r"(\d+)[})\]](?!\d)", r"\g<1>3"),
         # Low-resolution WhatsApp/thermal OCR fixes
         (r"\b[71]\s*RAPORU?\b", "Z RAPORU"),
-        (r"\b(?:PPu|Ppu|PPo|PPO|P\s*PP[iI1l]s|RAPOR\s*NO)\s*[1Iil]?\s*(\d{1,6})\b", r"RAPOR NO \1"),
+        (r"\b(?:PPu|Ppu|PPo|PPO|P\s*PP[iI1l]s)\s*[:/|\-]?\s*(\d{1,6})\b", r"RAPOR NO \1"),
+        (r"\bRAPOR\s*(?:NO|NUMARASI|V0|VO|IO|I0)\s*[:/|\-]?\s*(\d{1,6})\b", r"RAPOR NO \1"),
+        (r"\b([0-3])[uUoO]/([01]?\d)/(\d{2,4})\b", r"\g<1>0/\2/\3"),
         (r"\b81811\s+[yY]\s*[0-9OD]?\s*(\d{10,11})\b", r"SISLI V.D. \1"),
         (r"\b81811\s+[yY]\s*[0-9OD]?\s*388[co0O?]{2,3}[/]?9[489][53?]?\b", "SISLI V.D. 3880097945"),
         (r"\b[JjI1lTi][a-z]{2,5}\s*0?7[0-9a-zA-Z/]{2,10}(?:26|2026)\b", "TARIH 07/05/2026"),
