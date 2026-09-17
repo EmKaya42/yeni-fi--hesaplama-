@@ -149,30 +149,43 @@ def extract_payments(text, total, kind):
     except ImportError:
         lines = [folded(line.strip()) for line in text.splitlines() if line.strip()]
     
-    is_z = kind == "z-reports" or bool(re.search(r"\bZ\s*(?:RAPORU?|NO)\b|\bGUNLUK\s+FIS\s+DOKUMU\b", text, re.I))
+    # Detect Z-report: by kind, or by OCR text (handles OCR corruption like '2 RAPORU', 'Z RAPCRU')
+    is_z = (
+        kind == "z-reports"
+        or bool(re.search(r"\b[Z2]\s*(?:RAPORU?|RAPC?R[UO]?)\b|\bGUNLUK\s*FI[SŞ]\s*DOK[UÜ]M[UÜ]\b|\bRAPOR\s*(?:NO|V[O0])\b", folded(text)))
+        or bool(re.search(r"\bMAL[I\u0130]\s*BELLEK\b", folded(text)))
+    )
     in_belge_tipleri = False
     fallback_entries = []
+    _belge_tipleri_pattern = re.compile(r"[-~•*+']?\s*(NAKIT|KREDI\s*KARTI|KREDI|DIGER\s*(?:ODEME|TAHSILAT)?|DIGER|YEMEK\s*KARTI|PLUXEE|SODEXO|MULTINET|EDENRED|SETCARD|METROPOL\s*KART|TICKET(?:\s*RESTAURANT)?|BANKA\s*KARTI|DEBIT|POS|HAVALE|EFT|FAST)\b")
     for index, line in enumerate(lines):
-        if is_z:
-            if re.search(r"\bBELGE\s*TIPLERI\b", line):
-                in_belge_tipleri = True
+        # BELGE TIPLERI detection applies regardless of is_z flag (section only exists in Z-reports)
+        if re.search(r"\bBELGE\s*TIP[LI]ERI\b", line):
+            in_belge_tipleri = True
+            if not is_z:
+                is_z = True
+            continue
+        if in_belge_tipleri:
+            if re.search(r"\b(?:SAYACLAR|KASIYER|KASYER|EKU|JH|MAL\s*F)\b", line):
+                in_belge_tipleri = False
+            else:
+                match_bt = _belge_tipleri_pattern.search(line)
+                if match_bt:
+                    label = re.sub(r"\s", "", match_bt.group(1))
+                    cleaned = re.sub(r"[*•+~']", "", line)
+                    vals = re.findall(MONEY, cleaned)
+                    # If no amount on this line, look at next line (e.g. '-KREDI 33\nKREDI 35.650,00')
+                    if not vals and index + 1 < len(lines):
+                        next_clean = re.sub(r"[*•+~']", "", lines[index + 1])
+                        vals = re.findall(MONEY, next_clean)
+                    if vals:
+                        method = "meal_card" if re.fullmatch(r"YEMEKKARTI|PLUXEE|SODEXO|MULTINET|EDENRED|SETCARD|METROPOLKART|TICKET(?:RESTAURANT)?", label) else "cash" if label == "NAKIT" else "debit_card" if label in {"BANKAKARTI", "DEBIT"} else "card" if (label in {"KREDIKARTI", "CREDIT", "KREDI"} or "KREDI" in label or "KRED" in label) else "bank_transfer" if label in {"HAVALE", "EFT", "FAST"} else "pos" if label in {"POS", "KARTODEME", "KARTLAODEME"} else "other"
+                        amount = decimal_money(vals[-1])
+                        fb_entry = {"method": method, "amount": str(amount), "bank_code": "", "bank_role": "acquirer" if method in {"card", "debit_card", "pos"} else "unspecified"}
+                        if method == "meal_card":
+                            fb_entry["provider"] = "" if label == "YEMEKKARTI" else label
+                        fallback_entries.append(fb_entry)
                 continue
-            if in_belge_tipleri:
-                if re.search(r"\b(?:SAYACLAR|KASIYER|KASYER|EKU|JH|MAL\s*F)\b", line):
-                    in_belge_tipleri = False
-                else:
-                    match_bt = re.search(r"[-~•*+']?\s*(NAKIT|KREDI\s*KARTI|KREDI|DIGER\s*(?:ODEME|TAHSILAT)?|DIGER|YEMEK\s*KARTI|PLUXEE|SODEXO|MULTINET|EDENRED|SETCARD|METROPOL\s*KART|TICKET(?:\s*RESTAURANT)?|BANKA\s*KARTI|DEBIT|POS|HAVALE|EFT|FAST)\b", line)
-                    if match_bt:
-                        label = re.sub(r"\s", "", match_bt.group(1))
-                        vals = re.findall(MONEY, re.sub(r"[*•+~']", "", line))
-                        if vals:
-                            method = "meal_card" if re.fullmatch(r"YEMEKKARTI|PLUXEE|SODEXO|MULTINET|EDENRED|SETCARD|METROPOLKART|TICKET(?:RESTAURANT)?", label) else "cash" if label == "NAKIT" else "debit_card" if label in {"BANKAKARTI", "DEBIT"} else "card" if (label in {"KREDIKARTI", "CREDIT", "KREDI"} or "KREDI" in label or "KRED" in label) else "bank_transfer" if label in {"HAVALE", "EFT", "FAST"} else "pos" if label in {"POS", "KARTODEME", "KARTLAODEME"} else "other"
-                            amount = decimal_money(vals[-1])
-                            fb_entry = {"method": method, "amount": str(amount), "bank_code": "", "bank_role": "acquirer" if method in {"card", "debit_card", "pos"} else "unspecified"}
-                            if method == "meal_card":
-                                fb_entry["provider"] = "" if label == "YEMEKKARTI" else label
-                            fallback_entries.append(fb_entry)
-                    continue
         match = re.search(pattern, line)
         if not match or re.search(r"IADE|IPTAL|KOMISYON|ISLEM\s*(?:NO|SAYISI)|KART\s*(?:NO|NUMARASI)", line):
             continue
