@@ -434,6 +434,14 @@ def legacy_records():
     return jsonify(items=[dict(row) for row in rows])
 
 
+@app.delete("/api/documents")
+def delete_all_documents():
+    """Delete all documents belonging to the current user (both kinds)."""
+    with database(DB_PATH) as db:
+        deleted = db.execute("DELETE FROM documents WHERE user_id=?", (g.user_id,)).rowcount
+    return jsonify(deleted=deleted, message=f"{deleted} belge silindi.")
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     app.run(host="127.0.0.1", port=int(os.getenv("PORT", "5000")), debug=False, threaded=True)
