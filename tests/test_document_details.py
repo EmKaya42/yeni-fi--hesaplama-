@@ -195,3 +195,29 @@ def test_new_details_must_agree_between_both_ocr_reads(tmp_path, monkeypatch, re
         return {"text":words, "conf":[98]*len(words), "block_num":[0]*len(words), "par_num":[0]*len(words), "line_num":numbers}
     monkeypatch.setattr(document_ocr.pytesseract, "image_to_data", tokens)
     assert any("İki okuma" in issue for issue in read_document(path, 0, "z-reports", 1)["issues"])
+
+
+def test_bracket_corrupted_topkdv_in_clean_line_and_extraction():
+    from services.document_ocr import _clean_ocr_line
+    assert _clean_ocr_line("[OPADV *758,33") == "TOPKDV *758,33"
+    assert _clean_ocr_line("[OPKDV 100,00") == "TOPKDV 100,00"
+    
+    z_text = (
+        "ORNEK MARKET\n"
+        "VERGİ DAİRESİ: Kadıköy\n"
+        "VKN: 1234567890\n"
+        "Z RAPORU NO: 000456\n"
+        "MALİ SİCİL NO: AB00000123\n"
+        "FİŞ ADEDİ: 2\n"
+        "TARIH: 13.09.2026 SAAT: 23:15:42\n"
+        "GUNLUK FIS DOKUMU\n"
+        "TOPLAM *4.550,00\n"
+        "[OPADV *758,33\n"
+        "KREDI *4.550,00\n"
+    )
+    data = extract_document(z_text, "z-reports")
+    assert not data["issues"], data["issues"]
+    assert data["total_amount"] == "4550.00"
+    assert data["vat_breakdown"] == [{"rate": 20, "base": "3791.67", "tax": "758.33"}]
+    assert data["card_amount"] == "4550.00"
+

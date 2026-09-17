@@ -134,8 +134,9 @@ def _clean_ocr_line(line: str) -> str:
         (r"\bKred[i1]\b", "KREDI"),
         # KDV % misread: 820.xx / 320.xx -> %20, 810.xx -> %10, 808 -> %8
         (r"\b[38](10|20|08|01)\.00\b", r"%\1"),
-        # TOPKDV variants: Iopnov, TopkdV, Topndy, Topkov, Topkdv, KoY JoPLaMi, KDv TopLAHI, Fopndv, KoY 7oPLAMi
+        # TOPKDV variants: Iopnov, TopkdV, Topndy, Topkov, Topkdv, KoY JoPLaMi, KDv TopLAHI, Fopndv, KoY 7oPLAMi, [OPADV
         (r"\b(?:Iopnov|Iopndv|Topkd[Vv]|Topndy|Topkov|Topkdv|KoY\s+JoPLaMi|KDv\s+TopLAHI|Fopnd[vV]|KoY\s+[7T]oPLAM[iI])\b", "TOPKDV"),
+        (r"\[(?:OPADV|OPKDV|OPNDV|OPNOV)\b", "TOPKDV"),
         # KDV % misread: 820.xx / 320.xx / 820,00 -> %20, 810.xx -> %10, 808 -> %8
         (r"\b[389](10|20|08|01)\s*[,.]\s*(?:00|\d{2})\b", r"%\1"),
         # Kdv %20.941,66 -> Kdv %20 *5.941,66

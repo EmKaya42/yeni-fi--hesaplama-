@@ -277,3 +277,34 @@ def test_low_confidence_ocr_gets_one_automatic_alternative_read(client, monkeypa
         db.execute("UPDATE documents SET retry_after=0 WHERE id=?", (doc_id,))
     process_next(server.DB_PATH, lambda *args: result)
     assert client.get(f"/api/documents/{doc_id}", headers=client.auth).json["status"] == "review"
+
+
+def test_z_report_fallback_payments_from_belge_tipleri():
+    z_text = (
+        "ORNEK MARKET\n"
+        "VERGİ DAİRESİ: Kadıköy\n"
+        "VKN: 1234567890\n"
+        "Z RAPORU NO: 000456\n"
+        "MALİ SİCİL NO: AB00000123\n"
+        "FİŞ ADEDİ: 2\n"
+        "TARIH: 13.09.2026 SAAT: 23:15:42\n"
+        "KDV %20 100,00 20,00\n"
+        "SATIS TOPLAMI 120,00\n"
+        "ODEME BILGILERI\n"
+        "OKUNAMAYAN_ODEME\n"
+        "BELGE TIPLERI\n"
+        "-NAKIT *50,00\n"
+        "-KREDI *70,00\n"
+        "-DIGER *0,00\n"
+        "SAYACLAR\n"
+    )
+    data = extract_document(z_text, "z-reports")
+    assert not data["issues"], data["issues"]
+    assert data["payment_entries"] == [
+        {"method": "cash", "amount": "50.00", "bank_code": "", "bank_role": "unspecified"},
+        {"method": "card", "amount": "70.00", "bank_code": "", "bank_role": "acquirer"},
+        {"method": "other", "amount": "0.00", "bank_code": "", "bank_role": "unspecified"},
+    ]
+    assert data["cash_amount"] == "50.00"
+    assert data["card_amount"] == "70.00"
+
