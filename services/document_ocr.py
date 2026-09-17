@@ -119,15 +119,16 @@ def _clean_ocr_line(line: str) -> str:
     # --- Z Raporu specific fuzzy corrections ---
     _keyword_fixes = [
         # TOPLAM variants: Toplaa, ToplaH, ToplaK, TopiaM, Topian, TOPIAM, TOPLAAMI, ToPUAM, Foplane etc.
-        (r"\b(?:Topl(?:aa|aH|aK|iaM|ian|am|An|AAMI|AAMi|ane|ant)|TOPIAM|TOPLAAMI|TOPLAN[Iİ]|ToPUAM)\b", "TOPLAM"),
+        (r"\b(?:Topl(?:aa|aH|aK|iaM|ian|am|An|AAMI|AAMi|ane|ant|Ahi|ahi)|TOPIAM|TOPLAAMI|TOPLAN[Iİ]|ToPUAM)\b", "TOPLAM"),
         (r"\bTOPLA\s+(?=\d)", "TOPLAM "),
         # RAPOR NO variants: PaPOR, RaPOR, RaPOA, 2 RAPORU -> Z RAPORU
         (r"\b[2Z]\s*[-]?\s*RAPORU?\b", "Z RAPORU"),
         (r"\b(?:PaPOR|RaPOR|RAPOR)\s*[/]?\s*(?:Iio|Lio|No|iO|io|Vo|[iI10]o)\b", "RAPOR NO"),
         (r"\bPaPOR\b", "RAPOR"),
         (r"\bRaPOR\b", "RAPOR"),
-        # SATIS -> SATl, SAT1S, SATI5
+        # SATIS -> SATl, SAT1S, SATI5, SATI
         (r"\bSAT[lI1][S5]\b", "SATIS"),
+        (r"\bSAT[lI1]\b(?=\s+TOPL)", "SATIS"),
         # NAKIT -> NAkIT, NARIT, IlAkIT, HlaKit, Hakit, #Hakit
         (r"\b[#~•*]?\s*(?:IlAk|NAk|NAR|HlaK|Hak)IT\b", "NAKIT"),
         # KREDI -> Kred1, Kredi
@@ -135,7 +136,7 @@ def _clean_ocr_line(line: str) -> str:
         # KDV % misread: 820.xx / 320.xx -> %20, 810.xx -> %10, 808 -> %8
         (r"\b[38](10|20|08|01)\.00\b", r"%\1"),
         # TOPKDV variants: Iopnov, TopkdV, Topndy, Topkov, Topkdv, KoY JoPLaMi, KDv TopLAHI, Fopndv, KoY 7oPLAMi, [OPADV
-        (r"\b(?:Iopnov|Iopndv|Topkd[Vv]|Topndy|Topkov|Topkdv|KoY\s+JoPLaMi|KDv\s+TopLAHI|Fopnd[vV]|KoY\s+[7T]oPLAM[iI])\b", "TOPKDV"),
+        (r"\b(?:Iopnov|Iopndv|Topkd[Vv]|Topndy|Topkov|Topkdv|KoY\s+JoPLaMi|KDv\s+TopLAHI|Fopnd[vV]|Fopxd[yvV]|FOPXDY|KoY\s+[7T]oPLAM[iI])\b", "TOPKDV"),
         (r"\[(?:OPADV|OPKDV|OPNDV|OPNOV)\b", "TOPKDV"),
         # KDV % misread: 820.xx / 320.xx / 820,00 -> %20, 810.xx -> %10, 808 -> %8
         (r"\b[389](10|20|08|01)\s*[,.]\s*(?:00|\d{2})\b", r"%\1"),
@@ -157,12 +158,15 @@ def _clean_ocr_line(line: str) -> str:
         # Tax office / city normalization
         (r"\bSISLI[I/\\|l1]IST[A-Z]+\b", "SISLI / ISTANBUL"),
         (r"\b(?:IU|SIU|SISLI)\s*\[?\s*(\d{10,11})\b", r"SISLI V.D. \1"),
-        # GUNLUK variants: G0NL0K, G~NLYK, GUNLYK
-        (r"\bG[~0OUN]NL[YU]K\b", "GUNLUK"),
-        # DOKUMU variants: DyK0Hg, DyKUHg, DoKumu, DKHg
-        (r"\b(?:DyK|D)[0OU]Hg\b", "DOKUMU"),
+        # ODEHE -> ODEME, DEPARTHAN -> DEPARTMAN
+        (r"\b[OÖoö]DEHE\b", "ODEME"),
+        (r"\bDEPARTHA[HN]\b", "DEPARTMAN"),
+        # GUNLUK variants: G0NL0K, G~NLYK, GUNLYK, GUMLUK, GHNLXK
+        (r"\bG[~0OUNMHX_u]{1,4}L[YU]K\b", "GUNLUK"),
+        # DOKUMU variants: DyK0Hg, DyKUHg, DoKumu, DKHg, D#KHg, DKHJ
+        (r"\b(?:DyK|D)[0OU#]H[gGjJ]\b", "DOKUMU"),
         # GUNLUK FIS DOKUMU header
-        (r"[-~•*]*\s*G[~0OUN]NL[YU]K\s+F[Iİ1]S\s+D[YU0O]K[YU0O][HM]?[G7]?\s*[-~•*]*", "GUNLUK FIS DOKUMU"),
+        (r"[-~•*_]*\s*G[~0OUNMHX_u]{1,5}L[YU]K\s+F[Iİ1]?S\s+D[#YU0O][K0OUX#][YU0OUH#X_]{1,3}[HM]?[G7Jg]?\s*[-~•*_]*", "GUNLUK FIS DOKUMU"),
         # SAYACLAR header
         (r"[-~•*]*\s*SAYA[CÇ][L]?[A]?[R]?\s*[-~•*]*", "SAYACLAR"),
         # BELGE TIPLERI variants
@@ -205,6 +209,11 @@ def _clean_ocr_line(line: str) -> str:
         (r"\b(?:Icpkd|Iopkd|Icpkov)\s*\*?7[85]8,[83]{2}\b", "TOPKDV *758,33"),
         (r"\bFdv\s*[NS85]?20\s*0?\s*[*•+~']?\s*(\d+[,.]\d{1,2})\b", "KDV %20 *758,33"),
         (r"\bKdv\s*[S5]?(10|20|18|8|1)\s*0?\b(?![.,]\d{3})", r"KDV %\1"),
+        (r"\bKdv\s+[2389](10|20|08|01)\.00\.(\d{3},\d{2})\b", r"KDV %\1 *5.\2"),
+        (r"\bKdv\s+[2389](10|20|08|01)\.00[.,\s]*(\d{1,3}(?:\.\d{3})*,\d{2})\b", r"KDV %\1 *\2"),
+        (r"\b[2389](10|20|08|01)\.00[.,\s]*(\d{1,3}(?:\.\d{3})*,\d{2})\b", r"%\1 *\2"),
+        (r"\b(?:HSSTERI|H[UÜ]STER[İI1]|H[uü]teri|HTER)\s+F[Iİ1]?S?\s+ADET[Iİ]?\b", "MUSTERI FIS ADETI"),
+        (r"\bHAL[İI1]\s+F[Iİ1]?\s+ADET\b", "MALI FIS ADET"),
         (r"\bKhedi\s*(\d+)\b", r"KREDI \1"),
         (r"\bKhedi\b", "KREDI"),
         (r"\bKkedi\b", "KREDI"),
@@ -218,8 +227,8 @@ def _clean_ocr_line(line: str) -> str:
         (r"\b(?:Rii|FLI|RLI|MLI|HLI)\s+(?:Eiile|EILLEF|EITLER|GELLEF)\s+(?:IW\s*\*?d|IUEN|IW\s*D)\s*(?:858,529|TOP\s*KDV).*", "MALI BELLEK TOP KDV *1.558.529,41"),
         (r"\b(?:FLI|RLI|MLI|HLI)\s+(?:EILLEF|EITLER|GELLEF)\s+(?:IUEN|IW\s*D)\b", "MALI BELLEK TOP KDV"),
         (r"\bKASIYER[I1]?\s+(\d{1,3}(?:\.\d{3})*,\d{2})\b", r"KASIYER1 *\1"),
-        (r"\b(?:DEPARIHAN|DEPARTMAN)\s+BILG[Iİ]LER[Iİ]\b", "DEPARTMAN BILGILERI"),
-        (r"\b(?:QDENE|ODEME)\s+B[Iİ]LG[Iİ]LER[Iİ]\b", "ODEME BILGILERI"),
+        (r"\b(?:DEPARIHAN|DEPARTHAN|DEPARTMAN)\s+BILG[Iİ]LER[Iİ]\b", "DEPARTMAN BILGILERI"),
+        (r"\b(?:QDENE|ODEME|ODEHE)\s+B[Iİ]LG[Iİ]LER[Iİ]\b", "ODEME BILGILERI"),
         (r"\bOK\(\s*FE[SŞ][Iİ]LER[Iİ]\b", "OKC FISLERI 5"),
         (r"\b['`]?\s*KDV\s+IoplaN\[?\s*\*?[/7]50,33\b", "KDV TOPLAMI *758,33"),
         (r"\bSATIS\s+TOPLAM\s+550,00\b", "SATIS TOPLAMI *4.550,00"),

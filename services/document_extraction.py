@@ -80,11 +80,14 @@ def extract_datetime(text: str) -> str:
 def label_values(lines: list[str], pattern: str) -> list[str]:
     result = []
     for index, line in enumerate(lines):
-        match = re.match(pattern, line)
+        clean_ln = line.lstrip(" -~•*#'")
+        match = re.match(pattern, clean_ln)
+        if not match:
+            match = re.match(pattern, line)
         if not match:
             continue
         # Strip leading star (OCR asterisk before amounts like *35.650,00)
-        tail = re.sub(r"\*", "", line[match.end():])
+        tail = re.sub(r"\*", "", line[match.end():] if match.string == line else clean_ln[match.end():])
         values = re.findall(MONEY, tail)
         if not values and index + 1 < len(lines) and re.fullmatch(r"[\s*:=TL0-9.,+-]+", lines[index + 1]):
             values = re.findall(MONEY, re.sub(r"\*", "", lines[index + 1]))
@@ -265,6 +268,14 @@ def extract_document(text: str, kind: str) -> dict[str, Any]:
 
     def identifier(pattern: str) -> str:
         matches = list(dict.fromkeys(re.findall(pattern, plain, re.M)))
+        if is_z and len(matches) > 1:
+            suffixed = [m for m in matches if any(m != other and other.endswith(m) for other in matches)]
+            full = [m for m in matches if m not in suffixed]
+            if len(full) == 1:
+                return full[0]
+            z_bottom = re.search(r"\bZ\s*NO\s*[:#=-]?\s*(\d{1,12})\b", plain)
+            if z_bottom and z_bottom.group(1) in matches:
+                return z_bottom.group(1)
         if len(matches) > 1:
             issues.append("Belgede birden fazla numara veya vergi kimliği bulundu; tek belge yükleyin.")
         return matches[0] if matches else ""
@@ -290,34 +301,58 @@ def extract_document(text: str, kind: str) -> dict[str, Any]:
         candidate_totals = []
         candidate_totals.extend(label_values(lines, r"^(?:SATIS\s+TOPLAMI|TOPLAM\s+SATIS(?:\s+TUTARI)?|GUNLUK\s+(?:TOPLAM\s+)?CIRO|GENEL\s+TOPLAM|TOPLAM\s+CIRO)\b"))
         for idx, line in enumerate(lines):
-            if re.search(r"GUNLUK\s+FIS\s+DOKUMU", line):
+            clean_ln = line.lstrip(" -~•*#'")
+            if re.search(r"GUNLUK\s+FIS\s+DOKUMU", clean_ln):
                 for ln in lines[idx + 1:idx + 5]:
-                    if re.match(r"^TOPLAM\b", ln):
-                        vals = re.findall(MONEY, re.sub(r"[*•+~']", "", ln.split("TOPLAM", 1)[1]))
+                    if re.match(r"^TOPLAM\b", ln.lstrip(" -~•*#'")):
+                        vals = re.findall(MONEY, re.sub(r"[*•+~']", "", ln))
                         if vals:
                             candidate_totals.append(str(decimal_money(vals[-1])))
                 break
         candidate_totals.extend(label_values(lines, r"^KASIYERI?\b"))
         for idx, line in enumerate(lines):
-            if re.search(r"KDV\s+BILGILERI", line):
+            clean_ln = line.lstrip(" -~•*#'")
+            if re.search(r"^(?:SATIS\s+TOPLAMI|KASIYERI?)\b", clean_ln):
+                vals = re.findall(MONEY, re.sub(r"[*•+~']", "", line))
+                if not vals and idx > 0:
+                    vals = re.findall(MONEY, re.sub(r"[*•+~']", "", lines[idx - 1]))
+                if not vals and idx + 1 < len(lines):
+                    vals = re.findall(MONEY, re.sub(r"[*•+~']", "", lines[idx + 1]))
+                if vals:
+                    candidate_totals.append(str(decimal_money(vals[-1])))
+        for idx, line in enumerate(lines):
+            clean_ln = line.lstrip(" -~•*#'")
+            if re.search(r"KDV\s+BILGILERI", clean_ln):
                 for ln in lines[idx + 1:idx + 6]:
-                    if re.match(r"^TOPLAM\b", ln):
-                        vals = re.findall(MONEY, re.sub(r"[*•+~']", "", ln.split("TOPLAM", 1)[1]))
+                    if re.match(r"^TOPLAM\b", ln.lstrip(" -~•*#'")):
+                        vals = re.findall(MONEY, re.sub(r"[*•+~']", "", ln))
                         if vals:
                             candidate_totals.append(str(decimal_money(vals[-1])))
                 break
         for idx, line in enumerate(lines):
-            if re.search(r"DEPARTMAN\s+BILGILERI", line):
+            clean_ln = line.lstrip(" -~•*#'")
+            if re.search(r"DEPARTMAN\s+BILGILERI", clean_ln):
                 dept_sum = Decimal(0)
                 for ln in lines[idx + 1:idx + 15]:
-                    if re.search(r"^(?:ODEME|BELGE|SAYACLAR|KASIYER)", ln):
+                    if re.search(r"^(?:ODEME|BELGE|SAYACLAR|KASIYER)", ln.lstrip(" -~•*#'")):
                         break
-                    if re.match(r"^TOPLAM\b", ln):
-                        vals = re.findall(MONEY, re.sub(r"[*•+~']", "", ln.split("TOPLAM", 1)[1]))
+                    if re.match(r"^TOPLAM\b", ln.lstrip(" -~•*#'")):
+                        vals = re.findall(MONEY, re.sub(r"[*•+~']", "", ln))
                         if vals:
                             dept_sum += decimal_money(vals[-1])
                 if dept_sum > 0:
                     candidate_totals.append(str(dept_sum))
+                break
+        for idx, line in enumerate(lines):
+            clean_ln = line.lstrip(" -~•*#'")
+            if re.search(r"BELGE\s+TIPLERI", clean_ln):
+                for ln in lines[idx + 1:idx + 15]:
+                    if re.search(r"^(?:SAYACLAR|KASIYER|MALI|Z\s*RAPORU)", ln.lstrip(" -~•*#'")):
+                        break
+                    if re.search(r"^(?:-?\s*KREDI|-?\s*NAKIT|SATIS\s+TOPLAMI)", ln.lstrip(" -~•*#'")):
+                        vals = re.findall(MONEY, re.sub(r"[*•+~']", "", ln))
+                        if vals and decimal_money(vals[-1]) > 0:
+                            candidate_totals.append(str(decimal_money(vals[-1])))
                 break
         if candidate_totals:
             from collections import Counter

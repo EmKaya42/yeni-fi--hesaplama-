@@ -308,3 +308,66 @@ def test_z_report_fallback_payments_from_belge_tipleri():
     assert data["cash_amount"] == "50.00"
     assert data["card_amount"] == "70.00"
 
+
+def test_z_report_checkmark_corrupted_total_and_payment_reconciliation():
+    raw_ocr = (
+        "FORA TURIZM REKLAM\n"
+        "SAR. TIC LTO STI\n"
+        "SISLI V.D. 3880097945\n"
+        "TARIH 30/05/2026\n"
+        "SAAT 04:21:42\n"
+        "Z RAPORU\n"
+        "RAPOR NO 880\n"
+        "MALI BELLEK TOPLAMI *12.867.454,44\n"
+        "MALI BELLEK TOP KDV 2.070.030,56\n"
+        "GMLK FS D#KHg\n"
+        "TOPLAM *35.650,00\n"
+        "Fopxdy *5.941,66\n"
+        "~KDV BLGLER-\n"
+        "Kdv  220.00.941,66\n"
+        "TOPLAM 755.650,00\n"
+        "~DEPARTHAN BLGLER\n"
+        "BRA %20\n"
+        "TOPLAM *34,400,00\n"
+        "YERL K %20\n"
+        "TupLak *1.250,00\n"
+        "DEHE BLGLER\n"
+        "NAKIT\n"
+        "TOPLAM 0,00\n"
+        "KREDI 33\n"
+        "TOPLAM 435.650,00\n"
+        "'~BELGE TIPLERI\n"
+        "33\n"
+        "KC FLERI\n"
+        "TOPKDV *5.941,66\n"
+        "-SATI ToplAMI *35.650,00\n"
+        "-NAKIT *0,00\n"
+        "KREDI 35.650,00\n"
+        "-DGER 40,00\n"
+        "5\n"
+        "IPTAL\n"
+        "~TOPKDV *775,00\n"
+        "SATI   ToplAhi *4.650,00\n"
+        "SAYACLAR -\n"
+        "HAL F Adet 34\n"
+        "33\n"
+        "HTER F ADETI\n"
+        "-KASYER BLG--\n"
+        "*35.650,00\n"
+        "KASIYERI\n"
+        "KASIYER: KASIYER1\n"
+        "EK NO:0001 Z NO: 1880\n"
+        "NF JH 20004135\n"
+    )
+    data = extract_document(raw_ocr, "z-reports")
+    assert not data["issues"], data["issues"]
+    assert data["total_amount"] == "35650.00"
+    assert data["document_no"] == "1880"
+    assert data["transaction_count"] == 33
+    assert data["payment_entries"] == [
+        {"method": "cash", "amount": "0.00", "bank_code": "", "bank_role": "unspecified"},
+        {"method": "card", "amount": "35650.00", "bank_code": "", "bank_role": "acquirer"},
+    ]
+    assert data["card_amount"] == "35650.00"
+
+

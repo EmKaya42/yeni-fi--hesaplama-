@@ -161,16 +161,24 @@ def extract_details(original, kind, total, issues, notes):
 
     counts = []
     # Priority 1: Customer / OKC sales receipt count
-    for line in lines:
-        match = re.match(r"^(?:(?:(?:TOPLAM|SATIS)\s+)?(?:FIS|ISLEM|BELGE)\s*(?:ADEDI|SAYISI|SAY|ADET(?:I)?)|(?:OKC|MUSTERI)\s+(?:FIS(?:LER(?:I)?)?|ISLEM)\s*(?:ADEDI?|SAYISI?|ADETI?)?)\s*[:=]?\s*(\d+)\s*$", line)
+    for idx, line in enumerate(lines):
+        clean_ln = line.lstrip(" -~•*#'")
+        match = re.match(r"^(?:(?:(?:TOPLAM|SATIS)\s+)?(?:FIS|ISLEM|BELGE)\s*(?:ADEDI|SAYISI|SAY|ADET(?:I)?)|(?:OKC|MUSTERI)\s+(?:FIS(?:LER(?:I)?)?|ISLEM)\s*(?:ADEDI?|SAYISI?|ADETI?)?)\s*[:=]?\s*(\d+)?\s*$", clean_ln)
         if match:
-            counts.append(int(match[1]))
+            if match.group(1):
+                counts.append(int(match.group(1)))
+            elif idx > 0 and re.fullmatch(r"\d+", lines[idx - 1].strip()):
+                counts.append(int(lines[idx - 1].strip()))
     # Priority 2: General fiscal receipt count if no customer receipt count found
     if not counts:
-        for line in lines:
-            match = re.match(r"^MALI\s+FIS\s+ADET(?:I)?\s*[:=]?\s*(\d+)\s*$", line)
+        for idx, line in enumerate(lines):
+            clean_ln = line.lstrip(" -~•*#'")
+            match = re.match(r"^MALI\s+FIS\s+ADET(?:I)?\s*[:=]?\s*(\d+)?\s*$", clean_ln)
             if match:
-                counts.append(int(match[1]))
+                if match.group(1):
+                    counts.append(int(match.group(1)))
+                elif idx > 0 and re.fullmatch(r"\d+", lines[idx - 1].strip()):
+                    counts.append(int(lines[idx - 1].strip()))
     transaction_count = unique(counts, "Fiş / işlem adedi")
     cumulative = {}
     for key, label in (("sales", "satış"), ("vat", "KDV")):
