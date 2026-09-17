@@ -18,7 +18,7 @@ def process_next(db_path: Path, reader=read_document) -> bool:
     with database(db_path) as db:
         db.execute("BEGIN IMMEDIATE")
         # A killed deployment's claimed job becomes available after its lease expires.
-        db.execute("UPDATE documents SET status='queued', error='Kesilen okuma yeniden başlatılıyor.' WHERE status='processing' AND started_at < ?", (time.time() - 600,))
+        db.execute("UPDATE documents SET status='queued', error='Kesilen okuma yeniden başlatılıyor.' WHERE status='processing' AND started_at < ?", (time.time() - 60,))
         row = db.execute("SELECT * FROM documents WHERE status='queued' AND retry_after<=? ORDER BY created_at, page LIMIT 1", (time.time(),)).fetchone()
         if not row:
             return False
@@ -89,6 +89,11 @@ class QueueWorker:
     def start(self):
         with self.lock:
             if not self.thread or not self.thread.is_alive():
+                try:
+                    with database(self.db_path) as db:
+                        db.execute("UPDATE documents SET status='queued', error='' WHERE status='processing'")
+                except Exception:
+                    pass
                 self.thread = threading.Thread(target=self.run, daemon=True, name="document-ocr")
                 self.thread.start()
         self.wake.set()

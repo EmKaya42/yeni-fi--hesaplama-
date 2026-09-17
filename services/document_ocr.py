@@ -432,8 +432,8 @@ def read_document(path: Path, page: int, kind: str, attempt: int) -> dict:
         source.thumbnail((3000, 6000))
         raw_gray = ImageOps.grayscale(source)
         gray = raw_gray
-        if gray.width < 1200:
-            scale = max(1.0, min(3.5, 1200.0 / gray.width))
+        if gray.width < 1400:
+            scale = max(1.0, min(5.0, 1400.0 / gray.width))
             gray = gray.resize((int(gray.width * scale), int(gray.height * scale)), Image.Resampling.LANCZOS)
             gray = ImageEnhance.Sharpness(gray).enhance(1.4)
             gray = ImageEnhance.Contrast(gray).enhance(1.3)
