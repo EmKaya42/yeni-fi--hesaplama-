@@ -50,12 +50,15 @@ def decimal_money(value: Any) -> Decimal:
 
 def extract_datetime(text: str) -> str:
     # Try TARIH-labeled line first, then standalone date on a line, then anywhere in text
-    tarih_match = re.search(r"\bTARIH\s*[:;=-]?\s*(\d{1,2})[./\- ](\d{1,2})[./\- ](20\d{2}|\d{2})\b", text, re.I)
+    tarih_kw = r"(?:\b(?:TAR[Iİ1TL][A-Z0-9]?H|TARIHI|TARİHİ|IARIH|TART|iakiv|takih|iarih|iayii)\b|[Iİi1lt][a-z]{2,4}[iı1h])"
+    tarih_match = re.search(tarih_kw + r"\s*[:;=-]?\s*(\d{1,2})\s*[./\- ]\s*(\d{1,2})\s*[./\- ]\s*(20\d{2}|\d{2})\b", text, re.I)
     iso = re.search(r"\b(20\d{2})-(\d{2})-(\d{2})\b", text)
     # Standalone date: line begins with or only contains a date like '07/05/2026' or '07.05.2026'
-    standalone = re.search(r"(?:^|\n)\s*(?:TARIH\s*[:;=-]?\s*)?(\d{1,2})[./](\d{1,2})[./](20\d{2})\s*(?:\n|$)", text)
-    fallback = re.search(r"\b(\d{1,2})[./\-](\d{1,2})[./\-](20\d{2}|\d{2})\b", text)
-    clock = re.search(r"(?:SAAT\s*[:;=-]?\s*)?\b([0-2]?\d):([0-5]\d)(?::([0-5]\d))?\b", text, re.I)
+    standalone = re.search(r"(?:^|\n)\s*(?:" + tarih_kw + r"\s*[:;=-]?\s*)?(\d{1,2})\s*[./\-]\s*(\d{1,2})\s*[./\-]\s*(20\d{2})\s*(?:\n|$)", text, re.I)
+    fallback = re.search(r"\b(\d{1,2})\s*[./\-]\s*(\d{1,2})\s*[./\-]\s*(20\d{2}|\d{2})\b", text)
+    clock = re.search(r"(?:SAAT|SA[Iİ1]|SAT|SMT|S4AT)\s*[:;=-]?\s*([0-2]?\d)\s*[:;.]\s*([0-5]\d)(?:\s*[:;.]\s*([0-5]\d))?\b", text, re.I)
+    if not clock:
+        clock = re.search(r"\b([0-2]?\d):([0-5]\d)(?::([0-5]\d))?\b", text)
     try:
         if iso:
             year, month, day = map(int, iso.groups())
@@ -493,8 +496,8 @@ def extract_document(text: str, kind: str) -> dict[str, Any]:
     if re.search(r"\b(?:USD|EUR|DOLAR|EURO)\b", plain):
         issues.append("Dövizli belge otomatik TRY aktarımına uygun değil.")
     discount = discount_amount(details)
-    items = [] if is_z else extract_receipt_items(original, total, issues, discount)
-    if discount and not is_z:
+    items = [] if (is_z or is_detected_z) else extract_receipt_items(original, total, issues, discount)
+    if discount and not (is_z or is_detected_z):
         if len(breakdown) != 1:
             issues.append("Çok oranlı KDV içeren indirimli fişte indirimin oran bazında dağılımı incelenmeli.")
         else:

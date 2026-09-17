@@ -221,3 +221,58 @@ def test_bracket_corrupted_topkdv_in_clean_line_and_extraction():
     assert data["vat_breakdown"] == [{"rate": 20, "base": "3791.67", "tax": "758.33"}]
     assert data["card_amount"] == "4550.00"
 
+
+def test_z_report_counter_discount_and_fuzzy_datetime_no_issues():
+    from services.document_ocr import _clean_ocr_line
+    assert "TARIH 07/05/2026" in _clean_ocr_line("iakiv 0/i851/026")
+    assert "SAAT 01:51:02" in _clean_ocr_line("SAi 0181202")
+    assert "SISLI V.D. 3880097945" in _clean_ocr_line("515LI V D 3880097945")
+
+    z_text = (
+        "SAN. TIC. LTD. STI\n"
+        "ERGENEKON MAH. CUMHURIYET CAD.\n"
+        "FRANSIZ HASTANESI SK NO 349/1 SISLI / ISTANBUL\n"
+        "SISLI V.D. 3880097945\n"
+        "TARIH 07/05/2026\n"
+        "SAAT 01:51:02\n"
+        "Z RAPORU\n"
+        "RAPOR NO 1759\n"
+        "MALİ SİCİL NO: JH20011571\n"
+        "FİŞ ADEDİ: 5\n"
+        "MALI BELLEK TOPLAMI *9.615.138,88\n"
+        "MALI BELLEK TOP KDV *1.558.529,41\n"
+        "GUNLUK FIS DOKUMU\n"
+        "TOPLAM *4.550,00\n"
+        "TOPKDV *758,33\n"
+        "KDV BILGILERI\n"
+        "KDV %20.00 *758,33\n"
+        "TOPLAM *4.550,00\n"
+        "ODEME BILGILERI\n"
+        "NAKIT *0,00\n"
+        "KREDI 5\n"
+        "TOPLAM *4.550,00\n"
+        "SAYACLAR\n"
+        "ARTTIRIM ADET 0\n"
+        "ARTTIRIM TUTAR *0,00\n"
+        "INDIRIM ADET 0\n"
+        "INDIRIM TUTAR *0,00\n"
+        "DUZELTME ADET 0\n"
+        "DUZELTME TUTAR *0,00\n"
+        "SATIS IPTAL 0\n"
+        "SATIS IPTAL TUTAR *0,00\n"
+        "EKU NO: 0001 Z NO: 1759\n"
+    )
+    data = extract_document(z_text, "z-reports")
+    assert not data["issues"], data["issues"]
+    assert data["total_amount"] == "4550.00"
+    assert data["document_datetime"] == "2026-05-07T01:51:02"
+    assert data["document_time"] == "01:51:02"
+    assert data["tax_office"] == "Şişli"
+    assert data["tax_id"] == "3880097945"
+    assert data["card_amount"] == "4550.00"
+    assert data["cash_amount"] == "0.00"
+    assert not any("İndirim" in issue for issue in data["issues"])
+    assert not any("Tarih" in issue for issue in data["issues"])
+    assert not any("Saat" in issue for issue in data["issues"])
+
+

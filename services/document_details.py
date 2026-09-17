@@ -15,7 +15,7 @@ def extract_details(original, kind, total, issues, notes):
         lines = [_cl(folded(line)) for line in original]
     except ImportError:
         lines = [folded(line) for line in original]
-    is_z = kind == "z-reports"
+    is_z = kind == "z-reports" or any(re.search(r"\bZ\s*RAPOR", line) for line in lines)
 
     def unique(values, label):
         deduped = []
@@ -97,18 +97,20 @@ def extract_details(original, kind, total, issues, notes):
                 break
     device_no = code(r"(?:CIHAZ|YAZAR\s*KASA|OKC)\s*(?:SERI\s*)?(?:NO|NUMARASI)", "Cihaz numarası")
     clocks = []
+    saat_kw = r"(?:SAAT|SA[Iİ1]|SAT|SMT|S4AT|SA\s*AT)"
     for line in lines:
         # SAAT-labeled match (strongest signal)
-        saat_match = re.match(r"^SAAT\s*[:;=-]?\s*([0-2]?\d)\s*[:;.,-]\s*([0-5]\d)(?:\s*[:;.,-]\s*([0-5]\d))?\b", line)
+        saat_match = re.search(r"\b" + saat_kw + r"\s*[:;=-]?\s*([0-2]?\d)\s*[:;.,\- ]\s*([0-5]\d)(?:\s*[:;.,\- ]\s*([0-5]\d))?\b", line)
         if saat_match and int(saat_match[1]) <= 23:
             clocks.append(f"{int(saat_match[1]):02}:{saat_match[2]}" + (f":{saat_match[3]}" if saat_match[3] else ""))
             continue
-        # Any SAAT keyword match anywhere in line
-        for match in re.finditer(r"\bSAAT\s*[:;=-]?\s*([0-2]?\d)\s*[:;.,-]\s*([0-5]\d)(?:\s*[:;.,-]\s*([0-5]\d))?\b", line):
-            if int(match[1]) <= 23:
-                clocks.append(f"{int(match[1]):02}:{match[2]}" + (f":{match[3]}" if match[3] else ""))
+        # Continuous digits after SAAT e.g. 'SAAT 015102'
+        cont_match = re.search(r"\b" + saat_kw + r"\s*[:;=-]?\s*([0-2]\d)([0-5]\d)([0-5]\d)\b", line)
+        if cont_match and int(cont_match[1]) <= 23:
+            clocks.append(f"{int(cont_match[1]):02}:{cont_match[2]}:{cont_match[3]}")
+            continue
         if not clocks:
-            for match in re.finditer(r"(?<!\d)([0-2]?\d)\s*[:;]\s*([0-5]\d)(?:\s*[:;]\s*([0-5]\d))?(?!\d)", line):
+            for match in re.finditer(r"(?<![\d/.])([0-2]?\d)\s*[:;.]\s*([0-5]\d)(?:\s*[:;.]\s*([0-5]\d))?(?![\d/.])", line):
                 if int(match[1]) <= 23:
                     clocks.append(f"{int(match[1]):02}:{match[2]}" + (f":{match[3]}" if match[3] else ""))
     document_time = unique(clocks, "Saat")
@@ -155,7 +157,8 @@ def extract_details(original, kind, total, issues, notes):
             count = unique(counts, ADJUSTMENT_LABELS[key] + " adedi")
             adjustments[key] = {"amount": amount, "count": count if count != "" else None}
             if amount == "":
-                issues.append(f"{ADJUSTMENT_LABELS[key]} alanı var ancak tutarı okunamadı.")
+                if not (is_z and key == "discount"):
+                    issues.append(f"{ADJUSTMENT_LABELS[key]} alanı var ancak tutarı okunamadı.")
             if not is_z and key != "discount" and amount and decimal_money(amount) > 0:
                 issues.append("İptal/iade içeren fişin net ürün ve KDV dağılımı incelenmeli.")
 
