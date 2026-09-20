@@ -150,15 +150,24 @@ def extract_payments(text, total, kind):
     sections = list(z_sections(lines)) if is_z else [("general", line) for line in lines]
     groups = {"main": [], "documents": []}
     missing = {"main": [], "documents": []}
+    slip_type_pattern = (r'(?:T?ROY|VISA|MASTER(?:CARD)?|AMEX)\s*/\s*'
+                         r'(K(?:R|I|/)ED[I1]|CREDIT|DEBIT|BANKA)\s*/\s*(?:ONUS|OFFUS)')
     for index, (section, line) in enumerate(sections):
         if section not in {"general", "daily", "payments", "documents"}:
             continue
+        if re.fullmatch(slip_type_pattern, line):
+            continue  # Card type metadata; its following total is not a second payment.
         match = re.search(pattern, line)
         if not match or re.search(r"IADE|IPTAL|KOMISYON|ISLEM\s*(?:NO|SAYISI)|KART\s*(?:NO|NUMARASI)", line):
             continue
         group = "documents" if section == "documents" else "main"
         tail = line[match.end():]
         values = re.findall(MONEY, tail)
+        # POS terminal identifiers are metadata, not an additional payment.
+        if match.group() == 'POS' and not values and (
+                re.search(r'\bISYERI\b', line) or
+                re.match(r'\s*(?:NO\b|ID\b|NUMARASI\b|[A-Z]\d{4,}\b)', tail)):
+            continue
         amount_line = tail
         if not values and index + 1 < len(sections):
             next_section, next_line = sections[index + 1]
@@ -233,6 +242,28 @@ def extract_payments(text, total, kind):
             issues.append("Ödeme bilgileri ile belge tiplerindeki tahsilatlar çelişiyor.")
     if missing[selected_group]:
         issues.append("Ödeme alanı var ancak tutarı okunamadı.")
+    # A combined "Banka/Kredi Kartı" label is ambiguous on its own. A printed
+    # network/type/routing line on the attached approved slip can resolve it,
+    # but only when its own total matches exactly one unspecified card payment.
+    if not is_z:
+        generic_cards = [entry for entry in entries if entry['method'] == 'pos']
+        if len(generic_cards) == 1:
+            types = set()
+            for index, line in enumerate(lines):
+                card_type = re.fullmatch(slip_type_pattern, line)
+                if not card_type or index + 1 >= len(lines):
+                    continue
+                amount_line = lines[index + 1]
+                amounts = re.findall(MONEY, amount_line)
+                approved = any(re.fullmatch(r'ISLEM\s+ONAYLANDI', following)
+                               for following in lines[index + 2:index + 5])
+                if (approved and re.match(r'^TOPLAM\b', amount_line) and len(amounts) == 1
+                        and decimal_money(amounts[0]) == decimal_money(generic_cards[0]['amount'])):
+                    types.add('debit_card' if card_type[1] in {'DEBIT', 'BANKA'} else 'card')
+            if len(types) == 1:
+                generic_cards[0]['method'] = types.pop()
+            elif len(types) > 1:
+                issues.append('POS slipindeki kart türü bilgileri çelişiyor.')
     if not entries:
         issues.append("Ödeme yöntemi ve tutarı okunamadı.")
     elif total and sum((decimal_money(entry["amount"]) for entry in entries), Decimal(0)) != decimal_money(total):
