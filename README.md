@@ -115,6 +115,14 @@ Yayın öncesi Docker bulunan bir makinede `docker build -t fis-takip .` ve `doc
 
 ## Yerel geliştirme
 
+### OCR işlemi sunucuda kapanırsa
+
+OCR alt işleminin çıkış kodu, son aşaması ve Linux cgroup bellek sınırı/kullanımı `OCR worker failure` satırına kaydedilir. Ham belge metni bu tanı kaydına yazılmaz. `OCR_MEMORY` bellek ayırma hatası veya artan OOM sayacını, `OCR_KILLED` ise nedeni kesinleşmemiş sonlandırmayı belirtir; SIGKILL tek başına bellek yetersizliğinin kanıtı sayılmaz. `OCR_DEPENDENCY`, `OCR_CPU` ve `OCR_NATIVE_CRASH` ayrı kurulum/çalışma ortamı sorunlarıdır.
+
+Bellek nedeniyle kapanan veya zorla sonlandırılan OCR, aynı 240 saniyelik süre bütçesinde bir defa daha küçük satır tespit boyutuyla denenir. Kaynak çözünürlüğündeki metin parçaları tanınmaya devam eder; iki okuma ve tutar doğrulamaları korunur. Daha küçük tespit ek belirsizlik oluşturabilir; bu durumda belge başarılı gösterilmez. `OCR_COMPACT=1` bu modu ilk denemeden kullanır. Kuyruğun mevcut sınırlı yeniden denemeleri bittikten sonra sorun hata koduyla gösterilir.
+
+Yerel Windows ölçümünde bir uzun Z raporunun OCR alt işlemi yaklaşık 555 MiB, kurtarma modu yaklaşık 398 MiB tepe bellek kullandı. Bunlar Linux/Railway RAM garantisi değildir; web uygulamasının ve diğer işlemlerin belleği ayrıca gerekir. Railway bellek grafiği ve servis sınırı birlikte kontrol edilmelidir. Yayın sonrası hatalı belgenin ayrıntılarından yeniden okuma başlatılabilir.
+
 Bu bilgisayarda hazırlanan Windows denemesi için `Denemeyi-Ac.cmd` dosyasına çift tıklayın. Uygulama `http://127.0.0.1:5055/app` adresinde giriş istemeden açılır. Deneme belgeleri ve ayarlar `data/deneme` altında tutulur; tekrar açıldığında korunur. Kapatmak için `Denemeyi-Kapat.cmd` kullanın. İlk açılışta “Diğer / özel şablon” ve standart hesap planı seçilir; ayarlardan değiştirilebilir.
 
 Yerel PaddleOCR modelleri `.local-tools/paddle-models` içindedir. Başka bir Windows bilgisayarda bağımlılıklardan sonra `python -m scripts.setup_paddle_ocr` çalıştırılmalıdır. Yerel araçlar, başlatıcılar ve deneme verileri Docker imajına eklenmez; Docker model kurulumunu kendisi yapar.

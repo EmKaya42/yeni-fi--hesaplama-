@@ -16,6 +16,7 @@ from PIL import Image, ImageOps
 from services.document_extraction import extract_document, folded
 from services.ocr_layout import layout_text
 from services.ocr_models import BASE_DIR, verified_model_paths
+from services.ocr_process import memory_snapshot, process_failure, report_stage
 
 ENGINE_NAME = 'PaddleOCR · PP-OCRv6 · yerel'
 FIELD_LABELS = {
@@ -43,6 +44,11 @@ def create_engine():
         'Det.model_path': paths['Det'], 'Cls.model_path': paths['Cls'], 'Rec.model_path': paths['Rec'],
         'Det.model_type': ModelType.MOBILE, 'Det.ocr_version': OCRVersion.PPOCRV5,
         'Rec.model_type': ModelType.SMALL, 'Rec.ocr_version': OCRVersion.PPOCRV6,
+        'Rec.rec_batch_num': 1,
+        'Cls.cls_batch_num': 1,
+        # Compact mode bounds detection to RapidOCR's maximum 2000px side;
+        # recognition still uses crops of the original-resolution input.
+        'Det.limit_type': 'max' if os.getenv('OCR_COMPACT') == '1' else 'min',
         'EngineConfig.onnxruntime.intra_op_num_threads': 2,
         'EngineConfig.onnxruntime.inter_op_num_threads': 1,
     })
@@ -159,16 +165,19 @@ def read_in_process(path, page, kind, attempt, engine=None):
     import numpy as np
     from services.document_ocr import load_source, VERIFIED_FIELDS, _canonical
 
+    report_stage('model_loading')
     engine = engine or create_engine()
     start = time.monotonic()
     candidates, reads, confidence_issues, date_boxes, line_boxes = [], [], [], [], []
     rotation = 0
     with ExitStack() as stack:
+        report_stage('image_loading')
         source = stack.enter_context(load_source(path, page))
         factor = min(1, 2400 / source.width, 6000 / source.height,
                      (12_000_000 / (source.width * source.height)) ** .5)
         if factor < 1:
             source.thumbnail((max(1, int(source.width * factor)), max(1, int(source.height * factor))))
+        report_stage('reading')
         with prepare_image(source, 'original', attempt) as prepared:
             initial = engine(np.asarray(prepared)[:, :, ::-1].copy())
         initial_score = orientation_score(initial, kind)
@@ -208,6 +217,7 @@ def read_in_process(path, page, kind, attempt, engine=None):
             data.update(confidence=score, engine=ENGINE_NAME)
             candidates.append(data)
             reads.append({'variant': variant, 'engine': ENGINE_NAME, 'confidence': score, 'raw_text': text})
+        report_stage('verifying')
         detail_reads = reread_missing_date(source, candidates, date_boxes, engine, kind, line_boxes)
     conflicts = [field for field in VERIFIED_FIELDS
                  if _canonical(candidates[0].get(field)) != _canonical(candidates[1].get(field))]
@@ -242,17 +252,42 @@ def read_document(path, page, kind, attempt):
     verified_model_paths()
     with tempfile.TemporaryDirectory(prefix='fis-ocr-') as temporary:
         output = Path(temporary) / 'result.json'
+        progress = Path(temporary) / 'stage.txt'
         command = [sys.executable, '-m', 'services.paddle_ocr', str(Path(path).resolve()),
                    str(page), kind, str(attempt), str(output)]
-        env = {**os.environ, 'PYTHONUTF8': '1', 'OMP_NUM_THREADS': '2', 'OPENBLAS_NUM_THREADS': '1'}
+        env = {**os.environ, 'PYTHONUTF8': '1', 'OMP_NUM_THREADS': '2', 'OPENBLAS_NUM_THREADS': '1',
+               'OCR_STATUS_FILE': str(progress)}
+        before = memory_snapshot()
+        # A memory-killed process cannot write a result. Retry once with a
+        # smaller detector, within the original deadline and queue lease.
+        deadline = time.monotonic() + 240
+        for run in range(2):
+            try:
+                process = subprocess.run(command, cwd=BASE_DIR, env=env, capture_output=True,
+                                         timeout=max(1, deadline - time.monotonic()),
+                                         creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
+            except subprocess.TimeoutExpired as error:
+                raise RetryableOCRError('PaddleOCR okuması süre sınırına ulaştı. Yeniden deneyin. [OCR_TIMEOUT]') from error
+            if output.exists() and process.returncode == 0:
+                break
+            if not output.exists() or process.returncode < 0 or process.returncode >= 128:
+                after = memory_snapshot()
+                message, retry = process_failure(process.returncode, process.stderr, before, after,
+                                                 progress.read_text(encoding='utf-8') if progress.exists() else 'starting')
+                if retry and run == 0 and env.get('OCR_COMPACT') != '1' and time.monotonic() < deadline - 10:
+                    env['OCR_COMPACT'] = '1'
+                    before = after
+                    output.unlink(missing_ok=True)
+                    progress.unlink(missing_ok=True)
+                    continue
+                raise (RetryableOCRError if retry else RuntimeError)(message)
+            break  # A normal Python exception has a structured error payload.
         try:
-            process = subprocess.run(command, cwd=BASE_DIR, env=env, capture_output=True,
-                                     timeout=240, creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
-        except subprocess.TimeoutExpired as error:
-            raise RetryableOCRError('PaddleOCR okuması süre sınırına ulaştı. Otomatik yeniden denenecek.') from error
-        if not output.exists():
-            raise RuntimeError('PaddleOCR işlemi tamamlanamadı. Sunucunun bağımlılıklarını ve kullanılabilir belleğini kontrol edin.')
-        payload = json.loads(output.read_text(encoding='utf-8'))
+            payload = json.loads(output.read_text(encoding='utf-8'))
+            if not isinstance(payload, dict) or ('error' not in payload and not isinstance(payload.get('issues'), list)):
+                raise ValueError('Invalid worker response')
+        except (ValueError, OSError) as error:
+            raise RetryableOCRError('OCR sonuç dosyası tamamlanamadı. Otomatik yeniden denenecek. [OCR_RESULT_INVALID]') from error
         if process.returncode or 'error' in payload:
             raise RuntimeError(payload.get('error', 'PaddleOCR işlemi tamamlanamadı.'))
         return payload
@@ -260,10 +295,12 @@ def read_document(path, page, kind, attempt):
 
 if __name__ == '__main__':
     path, page, kind, attempt, output = sys.argv[1:]
+    report_stage('starting')
     try:
         result = read_in_process(Path(path), int(page), kind, int(attempt))
     except Exception as error:
         message = str(error) if isinstance(error, (RuntimeError, ValueError)) else 'PaddleOCR okuması tamamlanamadı. Sunucunun OCR kurulumunu kontrol edin.'
         Path(output).write_text(json.dumps({'error': message}, ensure_ascii=False), encoding='utf-8')
         raise SystemExit(1)
+    report_stage('writing')
     Path(output).write_text(json.dumps(result, ensure_ascii=False), encoding='utf-8')
