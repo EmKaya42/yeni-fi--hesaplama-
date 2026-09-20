@@ -57,6 +57,19 @@ def initialize(path: Path):
             if name not in columns:
                 db.execute(f"ALTER TABLE documents ADD COLUMN {name} {definition}")
         db.execute("CREATE INDEX IF NOT EXISTS documents_chart ON documents(user_id, chart_id, kind)")
+        # Withdraw names copied from other documents by the previous release.
+        # Clear the inferred value immediately, then read the original image again.
+        inherited = db.execute("SELECT id, result FROM documents WHERE json_type(result, '$.field_sources.seller_name') IS NOT NULL").fetchall()
+        for row in inherited:
+            result = json.loads(row['result'])
+            result.setdefault('retracted_field_sources', {})['seller_name'] = result['field_sources'].pop('seller_name')
+            result['seller_name'] = ''
+            result['issues'] = list(dict.fromkeys([*result.get('issues', []), 'Firma adı kaynak belgeden doğrulanamadı.']))
+            result['notes'] = [note for note in result.get('notes', []) if not note.startswith('Firma unvanı aynı VKN / TCKN')]
+            db.execute("""UPDATE documents SET result=?, status='queued', fingerprint=NULL,
+                          duplicate_of=NULL, retry_after=0, auto_retries=0, started_at=NULL,
+                          error='Başka belgeden tamamlanan unvan kaldırıldı; kaynak görsel yeniden okunacak.'
+                          WHERE id=?""", (json.dumps(result, ensure_ascii=False), row['id']))
         # Before extraction v2, product_name held the seller. Preserve original
         # results and files, but require another read before exporting products.
         db.execute("""UPDATE documents SET status='review', fingerprint=NULL,

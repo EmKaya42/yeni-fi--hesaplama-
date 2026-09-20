@@ -10,7 +10,6 @@ from pathlib import Path
 
 from services.document_ocr import read_document, RetryableOCRError
 from services.storage import database
-from services.seller_identity import complete_seller, queue_missing_sellers
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +31,7 @@ def process_next(db_path: Path, reader=read_document) -> bool:
             active = db.execute("SELECT 1 FROM documents WHERE id=? AND status='processing' AND started_at=?", (row["id"], claim_time)).fetchone()
             if not active:
                 return True
-            final_result = complete_seller(db, row, result)
+            final_result = result
             effective_kind = row['kind']
             status = 'review' if final_result['issues'] else 'success'
             fingerprint = None
@@ -49,8 +48,6 @@ def process_next(db_path: Path, reader=read_document) -> bool:
                 if duplicate:
                     status, duplicate_of, fingerprint = "duplicate", duplicate["id"], None
             db.execute("UPDATE documents SET status=?,result=?,fingerprint=?,duplicate_of=?,error='' WHERE id=? AND status='processing'", (status, json.dumps(final_result, ensure_ascii=False), fingerprint, duplicate_of, row["id"]))
-            if status == 'success':
-                queue_missing_sellers(db, row, final_result)
             if status == "review" and final_result.get("engine", "").startswith(("Tesseract", "PaddleOCR")) and row["auto_retries"] < 1:
                 db.execute("UPDATE documents SET status='queued',auto_retries=auto_retries+1,retry_after=?,error='Alternatif okuma otomatik deneniyor.' WHERE id=? AND status='review'", (time.time()+5, row["id"]))
     except Exception as error:

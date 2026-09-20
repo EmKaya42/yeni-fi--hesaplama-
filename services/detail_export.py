@@ -71,7 +71,7 @@ def add_detail_sheets(book, documents, profile, journal_reader):
                            amount(adjustment.get("refund", {}).get("amount")), adjustment.get("refund", {}).get("count"),
                            data.get("transaction_count"), amount(data.get("cumulative_sales")), amount(data.get("cumulative_vat")),
                            profile.get("chart", {}).get("name", "Standart hesaplar"),
-                           program_name, data.get('field_sources', {}).get('seller_name', {}).get('filename', ''),
+                           program_name,
                            '\n'.join(data.get('notes', []))])
         for index, item in enumerate(data.get("items", []), 1):
             items.append(base + [index, item["name"], Decimal(item["quantity"]) if item.get("quantity") else None,
@@ -90,7 +90,7 @@ def add_detail_sheets(book, documents, profile, journal_reader):
     identifiers = ["Kaynak dosya", "Z raporu numarası" if is_z else "Fiş / belge numarası", "İşletme adı / unvanı"]
     table("Belge Bilgileri", identifiers + ["Vergi dairesi", "VKN / TCKN", "Tarih", "Saat", "Mali sicil numarası", "Cihaz numarası",
           "KDV dâhil toplam satış" if is_z else "Genel toplam", "Toplam KDV", "İndirim tutarı", "İptal tutarı", "İptal adedi", "İade tutarı", "İade adedi",
-          "Fiş / işlem adedi", "Kümülatif satış", "Kümülatif KDV", "Firma hesap planı", "Muhasebe programı", "Otomatik firma adı kaynağı", "Okuma notları"], info,
+          "Fiş / işlem adedi", "Kümülatif satış", "Kümülatif KDV", "Firma hesap planı", "Muhasebe programı", "Okuma notları"], info,
           money_columns=(10, 11, 12, 13, 15, 18, 19), number_columns=(14, 16, 17))
     if not is_z:
         table("Fiş Kalemleri", identifiers + ["Kalem sırası", "Ürün / hizmet adı", "Miktar", "Birim", "Birim fiyat", "Kalem tutarı", "KDV oranı (%)"], items,

@@ -254,7 +254,6 @@ function fiscalDetail(doc) {
   const data = doc.result, isZ = doc.kind === 'z-reports';
   const values = [[isZ ? 'Z raporu numarası' : 'Fiş / belge numarası', data.document_no],
     ['İşletme adı / unvanı', data.seller_name], ['Vergi dairesi', data.tax_office], ['VKN / TCKN', data.tax_id],
-    ...(data.field_sources?.seller_name ? [['Firma adı kaynağı', `Aynı VKN / TCKN ile otomatik tamamlandı: ${data.field_sources.seller_name.filename}`]] : []),
     ['Tarih', data.document_datetime ? date(data.document_datetime) : ''], ['Saat', data.document_time],
     ...(isZ ? [['Mali sicil numarası', data.fiscal_id], ['Cihaz numarası', data.device_no], ['Fiş / işlem adedi', data.transaction_count],
       ['Kümülatif satış', money(data.cumulative_sales)], ['Kümülatif KDV', money(data.cumulative_vat)]] : [['Ürünler / açıklama', data.product_name]]),
