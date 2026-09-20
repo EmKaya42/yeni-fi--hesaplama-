@@ -66,12 +66,17 @@ def reread_missing_date(source, candidates, boxes, engine, kind):
     """Resolve one missing date only with two matching reads of its source crop."""
     import numpy as np
 
-    known = {data.get('document_datetime') for data in candidates if data.get('document_datetime')}
-    if len(known) != 1 or all(data.get('document_datetime') for data in candidates):
+    missing_time = any(not data.get('document_time') for data in candidates)
+    known = {data.get('document_datetime') for data in candidates
+             if data.get('document_datetime') and (not missing_time or data.get('document_time'))}
+    if len(known) != 1 or (not missing_time and all(data.get('document_datetime') for data in candidates)):
         return []  # Never choose between two different valid dates.
     if any(any('birden fazla tarih' in issue for issue in data['issues']) for data in candidates):
         return []
     expected = next(iter(known))
+    if any(data.get('document_datetime') and data['document_datetime'][:10] != expected[:10]
+           for data in candidates):
+        return []
     valid_boxes = [box for box in boxes if box[3] > box[1] + 3]
     if not valid_boxes:
         return []
@@ -95,6 +100,8 @@ def reread_missing_date(source, candidates, boxes, engine, kind):
     if len(reads) == 2 and all(read['verified'] for read in reads):
         for candidate in candidates:
             candidate['document_datetime'] = expected
+            if missing_time:
+                candidate['document_time'] = expected.split('T')[1]
             candidate['issues'] = [issue for issue in candidate['issues'] if issue != 'Tarih okunamadı.']
             candidate['notes'].append('Tarih, aynı görseldeki tarih satırı iki kez yakından okunarak doğrulandı.')
     return reads

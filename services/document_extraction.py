@@ -256,6 +256,15 @@ def extract_seller(original):
         labeled = re.match(r"^(?:ISLETME\s+(?:ADI|UNVANI)|UNVAN|SATICI)\s*[:=-]\s*", line)
         name = raw[labeled.end():] if labeled else raw
         name = re.sub(r"^[\s\"'~•*({[]+", "", name).strip(" \t\"'~•*)}]|-")
+        # A branch/brand may precede a two-line legal name whose suffix is
+        # printed only on the second line. Use that complete printed name.
+        following = original[index + 1:index + 3]
+        if (len(following) == 2 and not re.search(company_ext, line)
+                and all(not re.search(boundary, folded(value)) for value in following)
+                and re.search(r'[A-Z]{3}', folded(following[0]))
+                and not re.search(company_ext, folded(following[0]))
+                and re.search(company_ext, folded(following[1]))):
+            return ' '.join(following)
         parts = [name]
         for continuation in original[index + 1:index + 3]:
             next_line = folded(continuation)
@@ -297,14 +306,18 @@ def extract_document(text: str, kind: str) -> dict[str, Any]:
     notes: list[str] = []
     is_detected_z = detect_is_z_report(plain, original)
     is_z = kind == "z-reports"
+    is_information = bool(re.search(r'\bBILG[I1T]\s+F[I1][S$][I1T]\b|\bMALI\s+DE.ERI\s+YOKTUR\b', plain))
+    if is_information:
+        issues.append('Bilgi fişi / mali değeri olmayan belge: muhasebe aktarımı için asıl faturayı yükleyin.')
 
-    def identifier(pattern: str) -> str:
-        matches = list(dict.fromkeys(re.findall(pattern, plain, re.M)))
+    def identifier(pattern: str, source=None) -> str:
+        matches = list(dict.fromkeys(re.findall(pattern, plain if source is None else source, re.M)))
         if len(matches) > 1:
             issues.append("Belgede birden fazla numara veya vergi kimliği bulundu; tek belge yükleyin.")
         return matches[0] if matches else ""
 
-    tax_id = identifier(r"\b(?:VKN|TCKN|VERGI\s*(?:NO|NUMARASI)|V\.?\s*D\.?\s*(?:NO)?|TC\s*(?:NO)?)\s*[:#=-]?\s*(\d{10,11})\b")
+    seller_identity_lines = [line for line in lines if not re.search(r'\b(?:MUSTERI|ALICI)\b', line)]
+    tax_id = identifier(r"\b(?:VKN|TCKN|VERGI\s*(?:NO|NUMARASI)|V\.?\s*D\.?\s*(?:NO)?|TC\s*(?:NO)?)\s*[:#=-]?\s*(\d{10,11})\b", '\n'.join(seller_identity_lines))
     header_ids = {value for _, value in unlabeled_tax_identity(original)}
     if tax_id:
         header_ids.add(tax_id)
@@ -465,7 +478,7 @@ def extract_document(text: str, kind: str) -> dict[str, Any]:
         issues.append("Ürün açıklaması Excel hücre sınırını aşıyor.")
     series = identifier(r"^(?:B\.?\s*SERI|BELGE\s*SERI(?:SI)?|SERI(?:\s*NO)?)\s*[:#=-]\s*([A-Z0-9]{1,10})\b")
     return {"extraction_version": EXTRACTION_VERSION, "seller_name": seller, "product_name": "; ".join(product_names), **details,
-            "items": items, "document_series": series, "document_type": "Z Raporu" if (is_z or is_detected_z) else "Fatura" if re.search(r"\bFATURA\b", plain) else "Yazar Kasa Fişi",
+            "items": items, "document_series": series, "document_type": "Bilgi Fişi" if is_information else "Z Raporu" if (is_z or is_detected_z) else "Fatura" if re.search(r"\bFATURA\b", plain) else "Yazar Kasa Fişi",
             "tax_id": tax_id, "document_no": doc_no, "document_datetime": date,
             "total_amount": total, "vat_amount": str(sum((decimal_money(row["tax"]) for row in breakdown), Decimal(0))) if breakdown else "",
             "vat_breakdown": breakdown, **payments,
