@@ -157,6 +157,9 @@ def extract_payments(text, total, kind):
             continue
         if re.fullmatch(slip_type_pattern, line):
             continue  # Card type metadata; its following total is not a second payment.
+        if not is_z and (re.search(r'%\s*\d{1,2}\b', line) or
+                         (index + 1 < len(lines) and re.match(r'^%\s*\d{1,2}\b', lines[index + 1]))):
+            continue  # Priced merchandise such as "FAST YAPISTIRICI" or "POS RULOSU".
         bank_tender = re.fullmatch(r'([A-Z ]+)\s+TEK(?:\s+CEKIM)?\s+(?:TRY|TL)\s+(' + MONEY + r')', line)
         if bank_tender and not is_z and any(re.search(r'\bE[- ]?ARSIV\b', value) for value in lines):
             banks = identify_banks(bank_tender[1])

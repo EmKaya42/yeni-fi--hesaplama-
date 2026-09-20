@@ -179,7 +179,13 @@ def load_source(path: Path, page: int):
                     bitmap.close()
     else:
         with Image.open(path) as image:
-            source = ImageOps.exif_transpose(image).convert("RGB")
+            with ImageOps.exif_transpose(image) as oriented:
+                if oriented.mode in {'RGBA', 'LA'} or 'transparency' in oriented.info:
+                    with oriented.convert('RGBA') as foreground, Image.new('RGBA', oriented.size, 'white') as background:
+                        with Image.alpha_composite(background, foreground) as composite:
+                            source = composite.convert('RGB')
+                else:
+                    source = oriented.convert("RGB")
     return source
 
 

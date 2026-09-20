@@ -6,6 +6,7 @@ import re
 
 def clean_ocr_line(line: str) -> str:
     line = line.replace("\ufffd", "").replace("\u00a0", " ")
+    line = re.sub(r'(\d)(?=SAAT\b)', r'\1 ', line, flags=re.I)
     line = re.sub(r"(\d)\s*,\s*(\d{2})(?!\d)", r"\1,\2", line)
     # Join printed thousands only after an amount marker or a total label.
     # 'KREDI 2 120,00' can contain a transaction count, so leave it alone.

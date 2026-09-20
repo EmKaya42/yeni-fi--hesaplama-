@@ -80,10 +80,10 @@ def initialize(path: Path):
         # results. Preserve files, previous values and export history.
         db.execute("""UPDATE documents SET status='queued', fingerprint=NULL, duplicate_of=NULL,
                       retry_after=0, auto_retries=0, started_at=NULL,
-                      reprocess_version=6,
+                      reprocess_version=7,
                       error='Yeni OCR motoruyla kaynak dosya yeniden okunacak.'
-                      WHERE status IN ('success','duplicate','review','failed') AND reprocess_version < 6
-                      AND COALESCE(json_extract(result, '$.extraction_version'), 0) BETWEEN 2 AND 5""")
+                      WHERE status IN ('success','duplicate','review','failed') AND reprocess_version < 7
+                      AND COALESCE(json_extract(result, '$.extraction_version'), 0) BETWEEN 2 AND 6""")
 
 
 def document_dict(row, detail=False):

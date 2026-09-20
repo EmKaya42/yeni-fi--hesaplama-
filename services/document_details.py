@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from decimal import Decimal
 
-from services.document_extraction import MONEY, decimal_money, folded, unlabeled_tax_identity
+from services.document_extraction import MONEY, decimal_money, folded, unlabeled_tax_identity, seller_identity_lines
 
 ADJUSTMENT_LABELS = {"discount": "İndirim", "cancellation": "İptal", "refund": "İade"}
 
@@ -42,7 +42,8 @@ def extract_details(original, kind, total, issues, notes):
         return deduped[0] if deduped else ""
 
     offices = [office for office, _ in unlabeled_tax_identity(original)]
-    for raw, line in zip(original, lines):
+    for raw in seller_identity_lines(original):
+        line = folded(raw)
         prefix = re.match(r"^(?:VERGI\s+DAIRESI|V\.?\s*D\.?)(?:\s*[:=-]\s*|\s+)", line)
         suffix = re.search(r"\s+(?:VERGI\s+DAIRESI|V\.?\s*D\.?)(?=\s|:|$)", line)
         if prefix:

@@ -9,7 +9,7 @@ from typing import Any
 
 from services.ocr_text import clean_ocr_line, z_sections
 
-EXTRACTION_VERSION = 6
+EXTRACTION_VERSION = 7
 RATES = (0, 1, 8, 10, 18, 20)
 MONEY = r"(?<![\d.,])(?:\d{1,3}(?:[.,]\d{3})+|\d+)[.,]\d{2}(?!\d)"
 
@@ -138,7 +138,7 @@ def extract_receipt_items(original: list[str], total: str, issues: list[str], di
         value = re.sub(r"^\d+(?:[.,]\d+)?\s*(?:ADET|AD|KG|GR|LT|L)?\s*[xX×]\s*", "", value, flags=re.I)
         return re.sub(r"\s+", " ", value).strip(" \t*:;|–-")
 
-    for line in original:
+    for index, line in enumerate(original):
         normalized = folded(line)
         if re.search(metadata, normalized) or re.match(r"^MF\b|^(?:B\.?\s*|BELGE\s*)?SERI(?:SI)?(?:\s*NO)?\s*[:#=-]", normalized):
             started = True
@@ -147,7 +147,10 @@ def extract_receipt_items(original: list[str], total: str, issues: list[str], di
             continue
         if not started:
             continue
-        if re.search(footer, normalized):
+        product_rate = any(re.search(r'%\s*\d{1,2}(?:[.,]00)?\b', folded(value))
+                           for value in original[index:index + 3])
+        payment_named_product = re.match(r'^(?:NAKIT|KREDI|BANKA|POS)\b', normalized) and product_rate
+        if re.search(footer, normalized) and not payment_named_product:
             if pending or pending_quantity:
                 issues.append("Bir ürün satırının adı veya miktarı var ancak tutarı okunamadı.")
             break
@@ -245,7 +248,7 @@ def detect_is_z_report(plain: str, original: list[str]) -> bool:
 
 
 def extract_seller(original):
-    boundary = r"\b(?:VKN|TCKN|VERGI|TARIH|SAAT|FIS|FATURA|RAPOR|MALI|CIHAZ|TEL|ADRES|MAH|MAHALLESI|CAD|CADDE|CADDESI|SOK|SOKAK|SUBE)\b|\bV\.?D\.?\b"
+    boundary = r"\b(?:VKN|TCKN|VERGI|TARIH|SAAT|FIS|FATURA|RAPOR|MALI|CIHAZ|TEL|ADRES|MAH|MAHALLESI|CAD|CADDE|CADDESI|SOK|SOKAK|SUBE|EKU|MERSIS|SICIL)\b|\bZ\s*NO\b|\bV\.?D\.?\b"
     company_ext = r"\b(?:LTD|LIMITED|STI|SIRKETI|SANAYI|TICARET|ANONIM|A\.S|SAN|TIC|VE\s+TIC|SAR|ST[Iİ])\b"
     for index, raw in enumerate(original[:8]):
         line = folded(raw)
@@ -282,7 +285,7 @@ def extract_seller(original):
 def unlabeled_tax_identity(original):
     """Some fiscal printers use a standalone '<office> <VKN>' header line."""
     found = []
-    for raw in original[1:10]:
+    for raw in seller_identity_lines(original)[1:10]:
         normalized = folded(raw)
         if re.search(r"\b(?:TARIH|SAAT|FIS\s*NO|Z\s*RAPORU)\b", normalized):
             break
@@ -296,6 +299,22 @@ def unlabeled_tax_identity(original):
     return found
 
 
+def seller_identity_lines(original):
+    """Buyer identity blocks must not supply the seller's office or tax ID."""
+    result, buyer_block = [], False
+    for raw in original:
+        line = folded(raw)
+        if re.match(r'^(?:SATICI|TEDARIKCI)(?:\s+BILGILERI)?\s*[:=-]?\s*$', line):
+            buyer_block = False
+        if re.match(r'^(?:MUSTERI|ALICI)\b', line):
+            if not re.search(r'\b(?:VKN|TCKN|VERGI|TC)\b', line):
+                buyer_block = True
+            continue
+        if not buyer_block:
+            result.append(raw)
+    return result
+
+
 def extract_document(text: str, kind: str) -> dict[str, Any]:
     if kind not in {"receipts", "z-reports"}:
         raise ValueError("Belge türü geçersiz.")
@@ -306,9 +325,12 @@ def extract_document(text: str, kind: str) -> dict[str, Any]:
     notes: list[str] = []
     is_detected_z = detect_is_z_report(plain, original)
     is_z = kind == "z-reports"
-    is_information = bool(re.search(r'\bBILG[I1T]\s+F[I1][S$][I1T]\b|\bMALI\s+DE.ERI\s+YOKTUR\b', plain))
+    non_fiscal = bool(re.search(r'\bBILG[I1T]\s+F[I1][S$][I1T]\b|\bMALI\s+DE.ERI\s+YOKTUR\b', plain))
+    is_information = non_fiscal and not is_detected_z
     if is_information:
         issues.append('Bilgi fişi / mali değeri olmayan belge: muhasebe aktarımı için asıl faturayı yükleyin.')
+    elif non_fiscal and is_detected_z:
+        issues.append('Mali değeri olmayan Z raporu kopyası: muhasebe aktarımı için asıl Z raporunu yükleyin.')
 
     def identifier(pattern: str, source=None) -> str:
         matches = list(dict.fromkeys(re.findall(pattern, plain if source is None else source, re.M)))
@@ -316,8 +338,7 @@ def extract_document(text: str, kind: str) -> dict[str, Any]:
             issues.append("Belgede birden fazla numara veya vergi kimliği bulundu; tek belge yükleyin.")
         return matches[0] if matches else ""
 
-    seller_identity_lines = [line for line in lines if not re.search(r'\b(?:MUSTERI|ALICI)\b', line)]
-    tax_id = identifier(r"\b(?:VKN|TCKN|VERGI\s*(?:NO|NUMARASI)|V\.?\s*D\.?\s*(?:NO)?|TC\s*(?:NO)?)\s*[:#=-]?\s*(\d{10,11})\b", '\n'.join(seller_identity_lines))
+    tax_id = identifier(r"\b(?:VKN|TCKN|VERGI\s*(?:NO|NUMARASI)|V\.?\s*D\.?\s*(?:NO)?|TC\s*(?:NO)?)\s*[:#=-]?\s*(\d{10,11})\b", '\n'.join(seller_identity_lines(lines)))
     header_ids = {value for _, value in unlabeled_tax_identity(original)}
     if tax_id:
         header_ids.add(tax_id)

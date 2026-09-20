@@ -215,10 +215,17 @@ function readingNotice(doc) {
   const data = doc.result || {}, issues = [doc.error, ...(data.issues || [])].filter(Boolean);
   if (!issues.length) return '';
   const partial = doc.status === 'review' && data.raw_text;
-  const guidance = partial && !data.seller_name
+  const informational = issues.some(issue => /asıl (?:faturayı|Z raporunu)/.test(issue));
+  const cardUnspecified = issues.some(issue => issue.includes('Kartın banka kartı mı kredi kartı mı'));
+  const onlyAccounting = partial && issues.every(issue => /asıl (?:faturayı|Z raporunu)|Kartın banka kartı mı kredi kartı mı/.test(issue));
+  const guidance = informational
+    ? 'Belgede belirtilen asıl faturayı veya Z raporunu ekleyin. Bilgi fişini yeniden okutmak belgenin niteliğini değiştirmez.'
+    : partial && !data.seller_name
     ? 'Firma unvanı dahil belgenin üst kısmının tamamını gösteren fotoğrafı yükleyin. Aynı kesilmiş fotoğrafı yeniden denemek eksik kısmı tamamlamaz.'
+    : cardUnspecified
+    ? 'Kart türünün yazdığı POS slipi de aynı görselde görünmeli. Yalnızca POS bankası veya tek çekim bilgisi kart türünü belirlemez.'
     : 'İşaretlenen alanları kaynak belgeyle karşılaştırın; daha net bir fotoğrafı dosya ekle alanından yükleyebilirsiniz.';
-  return `<div class="detail-issues reading-notice"><b>${partial ? 'Belge kısmen okundu' : 'Belgeyi kontrol edin'}</b>${partial ? '<p>Okunan bilgiler aşağıda görünüyor. Eksik veya çelişen alanlar nedeniyle bu belge Excel’e aktarılmıyor.</p>' : ''}<ul>${issues.map(issue => `<li>${escape(issue)}</li>`).join('')}</ul><p>${guidance}</p></div>`;
+  return `<div class="detail-issues reading-notice"><b>${onlyAccounting ? 'Belge okundu; aktarım için ek belge gerekli' : partial ? 'Belge kısmen okundu' : 'Belgeyi kontrol edin'}</b>${partial ? '<p>Okunan bilgiler aşağıda görünüyor. Belirtilen nedenlerle bu belge Excel’e aktarılmıyor.</p>' : ''}<ul>${issues.map(issue => `<li>${escape(issue)}</li>`).join('')}</ul><p>${guidance}</p></div>`;
 }
 async function showDetail(id) {
   const version = ++detailVersion;
@@ -252,7 +259,7 @@ async function showDetail(id) {
 $('#detail-dialog').addEventListener('close', () => { detailVersion++; if (previewUrl) URL.revokeObjectURL(previewUrl); previewUrl = null; });
 function fiscalDetail(doc) {
   const data = doc.result, isZ = doc.kind === 'z-reports';
-  const values = [[isZ ? 'Z raporu numarası' : 'Fiş / belge numarası', data.document_no],
+  const values = [['Belge türü', data.document_type], [isZ ? 'Z raporu numarası' : 'Fiş / belge numarası', data.document_no],
     ['İşletme adı / unvanı', data.seller_name], ['Vergi dairesi', data.tax_office], ['VKN / TCKN', data.tax_id],
     ['Tarih', data.document_datetime ? date(data.document_datetime) : ''], ['Saat', data.document_time],
     ...(isZ ? [['Mali sicil numarası', data.fiscal_id], ['Cihaz numarası', data.device_no], ['Fiş / işlem adedi', data.transaction_count],

@@ -34,6 +34,21 @@ function setup(jsonApi, api) {
 const doc = id => ({ id, filename: `${id}.png`, kind: 'receipts', status: 'success', result: {} });
 const tick = async () => { await Promise.resolve(); await Promise.resolve(); };
 
+test('non-fiscal receipt asks for original document rather than clearer photo', () => {
+  const { context } = setup();
+  const html = context.readingNotice({ status:'review', result:{raw_text:'test',seller_name:'TEST',issues:['Bilgi fişi / mali değeri olmayan belge: muhasebe aktarımı için asıl faturayı yükleyin.']} });
+  assert.match(html, /Belge okundu; aktarım için ek belge gerekli/);
+  assert.match(html, /asıl faturayı veya Z raporunu/);
+  assert.doesNotMatch(html, /daha net bir fotoğrafı/);
+});
+
+test('unspecified card type explains the missing POS evidence', () => {
+  const { context } = setup();
+  const html = context.readingNotice({ status:'review', result:{raw_text:'test',seller_name:'TEST',issues:['Kartın banka kartı mı kredi kartı mı olduğu okunamadı.']} });
+  assert.match(html, /POS slipi/);
+  assert.match(html, /Belge okundu/);
+});
+
 test('late document response cannot replace the newer selected document', async () => {
   const first = deferred();
   const { context, $ } = setup(url => url.endsWith('/A') ? first.promise : Promise.resolve(doc('B')),

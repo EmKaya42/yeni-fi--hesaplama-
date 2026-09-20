@@ -130,6 +130,10 @@ Yerel önizleme için `ALLOW_LOCAL_AUTH=1` yalnız loopback adresinde ve Railway
 
 ## Testler
 
+Okuma sürümü 7, tarih ve saati ayrı doğrular; saatte uyuşmazlık olduğunda doğrulanmış tarihi korur. Eksik tarih/saat satırı aynı görselin dar bölgesinde iki kez tekrar okunur. Satır tespitinin bir karakteri kesmesi durumunda doğrudan satır tanıma denenir; iki yüksek güvenli sonuç ve mevcut tam okuma uyuşmadan alan tamamlanmaz. Zayıf belge yönünde 90/180/270 derece seçenekleri değerlendirilir ve seçilen yönde iki okuma yapılır. Bu işlemler yerel modelle çalışır.
+
+Müşteri kimlik blokları satıcı kimliğinden, ürünlerdeki ödeme kelimeleri ödeme satırlarından ayrılır. Bilgi fişi ve mali değeri olmadığını belirten Z kopyası otomatik aktarıma açılmaz. Belirsiz kart türü için POS slipi gerekir. Eksik unvan başka belgeden doldurulmaz. Önceki 2–6 sürüm sonuçları, kaynak dosyaları ve aktarım geçmişi korunarak bir defa yeniden sıraya alınır.
+
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
 .\.venv\Scripts\python.exe -m pytest tests -q
