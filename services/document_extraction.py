@@ -246,7 +246,7 @@ def detect_is_z_report(plain: str, original: list[str]) -> bool:
 
 def extract_seller(original):
     boundary = r"\b(?:VKN|TCKN|VERGI|TARIH|SAAT|FIS|FATURA|RAPOR|MALI|CIHAZ|TEL|ADRES|MAH|MAHALLESI|CAD|CADDE|CADDESI|SOK|SOKAK|SUBE)\b|\bV\.?D\.?\b"
-    company_ext = r"\b(?:LTD|LIMITED|STI|SIRKETI|SANAYI|TICARET|ANONIM|A\.S\.|SAN|TIC|VE\s+TIC|SAR|ST[Iİ])\b"
+    company_ext = r"\b(?:LTD|LIMITED|STI|SIRKETI|SANAYI|TICARET|ANONIM|A\.S|SAN|TIC|VE\s+TIC|SAR|ST[Iİ])\b"
     for index, raw in enumerate(original[:8]):
         line = folded(raw)
         if re.search(boundary, line) or re.search(r"\b[A-Z]{3,}\s*/\s*[A-Z]{3,}\b", line):
@@ -262,7 +262,10 @@ def extract_seller(original):
             if re.search(boundary, next_line) or not re.search(company_ext, next_line):
                 break
             clean_cont = re.sub(r"^[\s\"'~•*({[]+", "", continuation).strip(" \t\"'~•*)}]|-")
-            parts.append(clean_cont)
+            if len(parts) == 1 and folded(clean_cont).startswith(folded(name) + ' '):
+                parts = [clean_cont]  # Logo followed by its full legal company name.
+            else:
+                parts.append(clean_cont)
         return " ".join(parts)
     return ""
 
@@ -335,14 +338,18 @@ def extract_document(text: str, kind: str) -> dict[str, Any]:
     if len(totals) > 1:
         issues.append("Toplam tutar alanları birbiriyle çelişiyor.")
     total = totals[0] if totals else ""
-    taxes = label_values(fiscal_lines, r"^(?:TOP[ -]?KDV|TOPLAM\s*KDV|KDV(?:\s*(?:TOPLAMI?|TUTARI?))?)\b(?!\s*%)")
+    taxes = label_values(fiscal_lines, r"^(?:TOP[ -]?KDV|TOPLAM\s*KDV|KDV(?:\s*(?:TOPLAMI?|TUTARI?))?)\b(?!\s*%|\s*['’]?\s*SIZ\b|\s*HARIC\b)")
     if len(set(taxes)) > 1:
         issues.append("KDV toplamları birbiriyle çelişiyor.")
     from services.document_details import extract_details, discount_amount
     effective_kind = "z-reports" if (is_z or is_detected_z) else kind
     details = extract_details(original, effective_kind, total, issues, notes)
     discount = discount_amount(details)
-    items = [] if (is_z or is_detected_z) else extract_receipt_items(original, total, issues, discount)
+    from services.retail_invoice import retail_table
+    retail = retail_table(original, total, discount, issues, notes) if not (is_z or is_detected_z) else None
+    items = [] if (is_z or is_detected_z) else retail['items'] if retail else extract_receipt_items(original, total, issues, discount)
+    if retail:
+        fiscal_lines = retail['fiscal_lines']
     rate_matches = re.findall(r"%\s*(\d{1,2})(?:[.,]00)?\b|\bKDV\s+(\d{1,2})(?![.,\d])\b", "\n".join(fiscal_lines))
     rates = sorted({int(value) for match in rate_matches for value in match if value})
     if any(rate not in RATES for rate in rates):
@@ -399,8 +406,8 @@ def extract_document(text: str, kind: str) -> dict[str, Any]:
         issues.append("KDV oranı okunamadı; toplam tutardan oran tahmin edilmedi.")
     if rates and len(breakdown) != len(rates):
         issues.append("KDV kırılımı tam okunamadı; oran ve tutarlar birlikte gerekli.")
-    explicit_base = label_values(fiscal_lines, r"^(?:KDV\s*)?MATRAH\b")
-    if explicit_base and len(breakdown) == 1 and decimal_money(explicit_base[0]) != decimal_money(breakdown[0]["base"]):
+    explicit_base = label_values(fiscal_lines, r"^(?:(?:KDV\s*)?MATRAH|TOPLAM\s+KDV\s*['’]?\s*SIZ|KDV\s+HARIC(?:\s+TOPLAM)?)\b")
+    if explicit_base and breakdown and (len(explicit_base) != 1 or decimal_money(explicit_base[0]) != sum((decimal_money(part['base']) for part in breakdown), Decimal(0))):
         issues.append("Belgedeki matrah ile hesaplanan matrah uyuşmuyor.")
     if not breakdown:
         issues.append("KDV kırılımı tam okunamadı; oran ve tutarlar birlikte gerekli.")
@@ -431,7 +438,7 @@ def extract_document(text: str, kind: str) -> dict[str, Any]:
     from services.banking import extract_payments
     if details["document_time"] and date:
         date = date[:10] + "T" + details["document_time"]
-    payments, payment_issues = extract_payments("\n".join(original), total, effective_kind)
+    payments, payment_issues = extract_payments("\n".join(retail['payment_lines'] if retail else original), total, effective_kind)
     issues.extend(payment_issues)
     if re.search(r"\b(?:USD|EUR|DOLAR|EURO)\b", plain):
         issues.append("Dövizli belge otomatik TRY aktarımına uygun değil.")

@@ -100,4 +100,5 @@ def document_dict(row, detail=False):
         doc["result"].pop("raw_text", None)
         doc["result"].pop("normalized_text", None)
         doc["result"].pop("ocr_reads", None)
+        doc["result"].pop("detail_reads", None)
     return doc

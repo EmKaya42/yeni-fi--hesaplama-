@@ -61,7 +61,7 @@ _BANK_DATA = """0215|Adil Katılım|ADIL KATILIM
 0016|Türk Eximbank|EXIMBANK
 0062|Garanti BBVA|GARANTI
 0012|Halkbank|HALKBANK,HALK BANKASI
-0064|Türkiye İş Bankası|IS BANKASI,ISBANK,IS BANK
+0064|Türkiye İş Bankası|IS BANKASI,ISBANKASI,ISBANK,IS BANK
 0017|Türkiye Kalkınma ve Yatırım Bankası|KALKINMA BANKASI,KALKINMA VE YATIRIM
 0014|Türkiye Sınai Kalkınma Bankası|SINAI KALKINMA,TSKB
 0015|VakıfBank|VAKIFBANK,VAKIFLAR BANKASI
@@ -157,6 +157,13 @@ def extract_payments(text, total, kind):
             continue
         if re.fullmatch(slip_type_pattern, line):
             continue  # Card type metadata; its following total is not a second payment.
+        bank_tender = re.fullmatch(r'([A-Z ]+)\s+TEK(?:\s+CEKIM)?\s+(?:TRY|TL)\s+(' + MONEY + r')', line)
+        if bank_tender and not is_z and any(re.search(r'\bE[- ]?ARSIV\b', value) for value in lines):
+            banks = identify_banks(bank_tender[1])
+            if len(banks) == 1:
+                groups['main'].append({'method': 'pos', 'amount': str(decimal_money(bank_tender[2])),
+                                       'bank_code': banks[0], 'bank_role': 'acquirer'})
+                continue
         match = re.search(pattern, line)
         if not match or re.search(r"IADE|IPTAL|KOMISYON|ISLEM\s*(?:NO|SAYISI)|KART\s*(?:NO|NUMARASI)", line):
             continue

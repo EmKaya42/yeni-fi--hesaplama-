@@ -62,13 +62,51 @@ def uncertain_fields(data, rows):
     return issues
 
 
+def reread_missing_date(source, candidates, boxes, engine, kind):
+    """Resolve one missing date only with two matching reads of its source crop."""
+    import numpy as np
+
+    known = {data.get('document_datetime') for data in candidates if data.get('document_datetime')}
+    if len(known) != 1 or all(data.get('document_datetime') for data in candidates):
+        return []  # Never choose between two different valid dates.
+    if any(any('birden fazla tarih' in issue for issue in data['issues']) for data in candidates):
+        return []
+    expected = next(iter(known))
+    valid_boxes = [box for box in boxes if box[3] > box[1] + 3]
+    if not valid_boxes:
+        return []
+    box = valid_boxes[0]
+    reads = []
+    with source.crop(box) as crop:
+        for variant in ('original', 'contrast'):
+            prepared = crop.copy() if variant == 'original' else ImageOps.autocontrast(ImageOps.grayscale(crop), cutoff=.5).convert('RGB')
+            with prepared:
+                raw = engine(np.asarray(prepared)[:, :, ::-1].copy())
+            if raw.boxes is None or not raw.txts:
+                return reads
+            text, rows = layout_text(raw.boxes, raw.txts, raw.scores)
+            parsed = extract_document(text, kind)
+            date_rows = [row for row in rows if re.search(r'\b\d{1,2}[./-]\d{1,2}[./-]\d{4}\b', row['text'])]
+            verified = (parsed['document_datetime'] == expected and date_rows
+                        and min(row['confidence'] for row in date_rows) >= 65
+                        and not any('birden fazla tarih' in issue for issue in parsed['issues']))
+            reads.append({'field': 'document_datetime', 'variant': variant, 'raw_text': text,
+                          'crop_box': box, 'verified': bool(verified)})
+    if len(reads) == 2 and all(read['verified'] for read in reads):
+        for candidate in candidates:
+            candidate['document_datetime'] = expected
+            candidate['issues'] = [issue for issue in candidate['issues'] if issue != 'Tarih okunamadı.']
+            candidate['notes'].append('Tarih, aynı görseldeki tarih satırı iki kez yakından okunarak doğrulandı.')
+    return reads
+
+
 def read_in_process(path, page, kind, attempt, engine=None):
     import numpy as np
     from services.document_ocr import load_source, VERIFIED_FIELDS, _canonical
 
     engine = engine or create_engine()
     start = time.monotonic()
-    candidates, reads, confidence_issues = [], [], []
+    candidates, reads, confidence_issues, date_boxes = [], [], [], []
     with load_source(path, page) as source:
         factor = min(1, 2400 / source.width, 6000 / source.height,
                      (12_000_000 / (source.width * source.height)) ** .5)
@@ -86,10 +124,17 @@ def read_in_process(path, page, kind, attempt, engine=None):
                 prepared.close()
                 prepared = enlarged
             with prepared:
+                image_scale = prepared.width / source.width
                 raw = engine(np.asarray(prepared)[:, :, ::-1].copy())
             if raw.boxes is None or not raw.txts:
                 raise RuntimeError('Görselde okunabilir yazı bulunamadı. Belgenin tamamını gösteren daha net bir fotoğraf yükleyin.')
             text, rows = layout_text(raw.boxes, raw.txts, raw.scores)
+            for row in rows:
+                if re.search(r'\b\d{1,2}[./-]\d{1,2}[./-]\d{4,}\b', row['text']):
+                    top = min(point[1] for region in row['regions'] for point in region['box']) / image_scale
+                    bottom = max(point[1] for region in row['regions'] for point in region['box']) / image_scale
+                    pad = (bottom - top) * .65
+                    date_boxes.append([0, max(0, int(top - pad)), source.width, min(source.height, int(bottom + pad))])
             data = extract_document(text, kind)
             confidence_issues.extend(uncertain_fields(data, rows))
             score = round(sum(float(value) for value in raw.scores) / len(raw.scores) * 100, 1)
@@ -98,6 +143,7 @@ def read_in_process(path, page, kind, attempt, engine=None):
             data.update(confidence=score, engine=ENGINE_NAME)
             candidates.append(data)
             reads.append({'variant': variant, 'engine': ENGINE_NAME, 'confidence': score, 'raw_text': text})
+        detail_reads = reread_missing_date(source, candidates, date_boxes, engine, kind)
     conflicts = [field for field in VERIFIED_FIELDS
                  if _canonical(candidates[0].get(field)) != _canonical(candidates[1].get(field))]
     result = dict(min(candidates, key=lambda data: (len(data['issues']), -data['confidence'])))
@@ -114,7 +160,7 @@ def read_in_process(path, page, kind, attempt, engine=None):
         if other_conflicts:
             result['issues'].append('İki okuma sonucu birlikte doğrulanamadı: ' + ', '.join(other_conflicts) + '. Kaynak belgeyi kontrol edin.')
     result['issues'] = list(dict.fromkeys(result['issues']))
-    result.update(ocr_reads=reads, conflicting_fields=conflicts,
+    result.update(ocr_reads=reads, detail_reads=detail_reads, conflicting_fields=conflicts,
                   processing_seconds=round(time.monotonic() - start, 2))
     return result
 
