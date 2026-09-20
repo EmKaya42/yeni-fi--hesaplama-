@@ -9,3 +9,9 @@ tests
 .env.*
 .vscode
 artifacts
+scratch
+.local-tools
+Denemeyi-Ac.cmd
+Denemeyi-Kapat.cmd
+scripts/local-preview.ps1
+scripts/setup-local-ocr.ps1

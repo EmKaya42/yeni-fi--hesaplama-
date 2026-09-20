@@ -309,7 +309,7 @@ def test_z_report_fallback_payments_from_belge_tipleri():
     assert data["card_amount"] == "70.00"
 
 
-def test_z_report_checkmark_corrupted_total_and_payment_reconciliation():
+def test_z_report_corrupted_totals_and_identifiers_require_review():
     raw_ocr = (
         "FORA TURIZM REKLAM\n"
         "SAR. TIC LTO STI\n"
@@ -360,18 +360,13 @@ def test_z_report_checkmark_corrupted_total_and_payment_reconciliation():
         "NF JH 20004135\n"
     )
     data = extract_document(raw_ocr, "z-reports")
-    assert not data["issues"], data["issues"]
-    assert data["total_amount"] == "35650.00"
-    assert data["document_no"] == "1880"
-    assert data["transaction_count"] == 33
-    assert data["payment_entries"] == [
-        {"method": "cash", "amount": "0.00", "bank_code": "", "bank_role": "unspecified"},
-        {"method": "card", "amount": "35650.00", "bank_code": "", "bank_role": "acquirer"},
-    ]
-    assert data["card_amount"] == "35650.00"
+    assert data["issues"]
+    assert any("çelişiyor" in issue or "birden fazla numara" in issue for issue in data["issues"])
+    assert data["document_no"] == "880"  # Never substitute the different footer number.
+    assert data["card_amount"] == "435650.00"  # Never trim digits to force agreement.
 
 
-def test_z_report_zero_cash_allocates_full_total_to_card():
+def test_z_report_zero_cash_does_not_invent_unreadable_card_amount():
     # Degraded OCR where KREDI amount was corrupted by checkmark or noise but Nakit is 0.00
     degraded = (
         "FORA TURIZM REKLAM\n"
@@ -414,11 +409,10 @@ def test_z_report_zero_cash_allocates_full_total_to_card():
         "JH 20004135\n"
     )
     data = extract_document(degraded, "z-reports")
-    assert not data["issues"], data["issues"]
+    assert data["issues"]
     assert data["total_amount"] == "35650.00"
-    assert data["card_amount"] == "35650.00"
-    assert any(e["method"] == "card" and e["amount"] == "35650.00" for e in data["payment_entries"])
-
+    assert data["card_amount"] == ""
+    assert not any(e["method"] == "card" for e in data["payment_entries"])
 
 
 

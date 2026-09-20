@@ -1,6 +1,6 @@
 # Çelikel SMM · Fiş ve Z raporu çalışma alanı
 
-Flask, SQLite, Tesseract ve OpenPyXL tabanlı belge işleme uygulaması. Başlangıçta giriş ekranı, girişten sonra doğrudan Fişler açılır; ana sayfa, manuel belge formları ve birleşik toplu indirme bulunmaz.
+Flask, SQLite, PaddleOCR/RapidOCR ve OpenPyXL tabanlı belge işleme uygulaması. Varsayılan OCR ücretsizdir ve tamamen sunucuda çalışır; belge görselleri bir bulut OCR servisine gönderilmez. Başlangıçta giriş ekranı, girişten sonra doğrudan Fişler açılır; ana sayfa, manuel belge formları ve birleşik toplu indirme bulunmaz.
 
 ## Belge akışı
 
@@ -9,14 +9,14 @@ Flask, SQLite, Tesseract ve OpenPyXL tabanlı belge işleme uygulaması. Başlan
 - JPG, PNG, WEBP, TIFF, BMP ve PDF desteklenir. Tek seçimde dosya sayısı sınırı yoktur; 50, 100, 125 ve daha fazla dosya tek tek HTTP istekleriyle yüklenir. Her dosya en fazla 20 MB, her PDF en fazla 100 sayfadır. Her PDF sayfasında **tek belge** bulunmalıdır.
 - Dosyalar yüklenirken sekme açık kalmalıdır. Sunucuya ulaşmış belgeler, sekme kapansa bile kalıcı SQLite kuyruğundan sırayla okunur. İşletim sistemi/kapasite kaynaklı sınırlar hâlâ geçerlidir.
 - Durumlar: sırada, okunuyor, kontrolleri geçti (tik), inceleme gerekli, hesap eşleşmesi gerekli, okunamadı, mükerrer. Sonuç, ödeme dağılımı, oluşturulacak muhasebe fişi ve kaynak belge birlikte incelenebilir. İnceleme/başarısızlık durumunda aynı dosya yeniden okunabilir; daha net bir fotoğraf ayrıca yüklenebilir.
-- Tesseract sonucu incelemeye düştüğünde bir kez alternatif okuma otomatik denenir. Geçici OCR zaman aşımı/işlem hataları 5 ve 10 saniye beklemeyle en fazla iki kez otomatik denenir. Sonuç yine belirsizse incelemede kalır; kullanıcı ayrıca Yeniden dene kullanabilir. Deneme sayıları ve bekleyen işler veritabanında saklanır.
+- OCR sonucu incelemeye düştüğünde bir kez alternatif görüntü ölçeği otomatik denenir. Geçici OCR zaman aşımı/işlem hataları 5 ve 10 saniye beklemeyle en fazla iki kez otomatik denenir. Sonuç yine belirsizse incelemede kalır; kullanıcı ayrıca Yeniden dene kullanabilir. Deneme sayıları ve bekleyen işler veritabanında saklanır.
 - Yeniden denemede sayfa yönü kontrolü ve alternatif metin yerleşimi kullanılır. Dosya hash'i aynı firmaya aynı yüklemeyi tekrar eklemez; doğrulanmış vergi kimliği + belge no + tarih + tutar eşleşmesi farklı fotoğraftaki mükerreri dışarıda bırakır.
 - Fiş Excel yalnız Fişler'de, Z raporu Excel yalnız Z Raporları'nda görünür. Seçili firmanın ilgili belge kuyruğu bitmeden çıktı alınmaz; yalnız kontrolleri geçmiş belgeler dahil edilir. İnceleme/başarısız/mükerrer belgeler dışarıda kalır ve sayıları ekranda görünür. Seçili dönemde hesap eşleşmesi eksik belge varsa aktarım durur. Excel hazırlanma tarihi, belge kimlikleri ve dosya özeti kaydedilir.
 - Önceki sürümün receipts/z_reports tabloları silinmez. Aynı kullanıcıya ait eski kayıtlar ayrı arşivde görünür. Önceki sürüm tutar hataları sebebiyle eski kayıtlar doğrulanmış yeni çıktıların içine otomatik karıştırılmaz.
 
 ## Okuma doğruluğunun sınırları
 
-İki farklı Tesseract okuması karşılaştırılır. Firma, ürün satırları, belge tipi/serisi, tarih, vergi kimliği, belge no, toplam, KDV kırılımı ve ödeme bilgileri eşleşmeli; zorunlu alanlar, KDV oran/matrah/tutarı ve matrah + KDV = toplam kontrolleri geçmelidir. Fişte ürün adları tutarlı satırlardan alınır; ürün toplamı fiş toplamına eşit olmalıdır. Satırların KDV oranları okunmuşsa oran bazında toplamlar da karşılaştırılır. Z raporunda ödeme toplamı ayrıca kontrol edilir. Eksik tutar sıfır yapılmaz; Decimal ile kuruş hassasiyeti korunur.
+Özgün renkli görüntü ve kontrastı düzenlenmiş görüntü üzerinde iki PaddleOCR okuması karşılaştırılır. Firma, ürün satırları, belge tipi/serisi, tarih, vergi kimliği, belge no, toplam, KDV kırılımı ve ödeme bilgileri eşleşmeli; zorunlu alanlar, KDV oran/matrah/tutarı ve matrah + KDV = toplam kontrolleri geçmelidir. Fişte ürün adları tutarlı satırlardan alınır; ürün toplamı fiş toplamına eşit olmalıdır. Satırların KDV oranları okunmuşsa oran bazında toplamlar da karşılaştırılır. Z raporunda ödeme toplamı ayrıca kontrol edilir. Eksik tutar sıfır yapılmaz; Decimal ile kuruş hassasiyeti korunur.
 
 Firma adı `seller_name`, ürün adı ve tutarları `items` alanlarında ayrı saklanır. Fişin Açıklama sütununda ürün adları `; ` ile birleştirilir; aynı ad bir kez gösterilir, tüm ürün tutarları kontrol edilir. Türkçe karakterler ve ambalaj bilgileri korunur. İsimsiz, eksik tutarlı, toplamı uyuşmayan veya iade içeren ürün satırları incelemeye ayrılır. Tek KDV oranlı indirimli fişte ürün toplamı − belgede yazan indirim = genel toplam doğrulanır; indirim muhasebe tutarından tekrar düşülmez. Çok oranlı indirim, oran bazında güvenli dağıtım yapılamıyorsa incelemede kalır. Önceden `product_name` alanına firma yazılmış başarılı fişler açılışta incelemeye alınır; kaynakları ve eski sonuçları korunur, Yeniden dene ile yeni kurallarla okunur.
 
@@ -28,7 +28,33 @@ Z raporunda bunlara cihaz/mali sicil numarası, fiş/işlem adedi, nakit, kredi 
 
 Vergi dairesi ve saat zorunludur; Z raporunda cihaz veya mali sicil numarasından en az biri ve işlem adedi de gereklidir. Eksik saat `00:00` yapılmaz. İsteğe bağlı alanın belgede bulunmaması ile açıkça `0,00` yazması farklı saklanır. Alanın etiketi basılmış ancak tutarı okunamamışsa inceleme gerekir. Yeni alanların tamamı iki OCR okuması arasında karşılaştırılır; uyuşmazlık hazır tikini engeller. Bu doğrulama VKN/TCKN'nin resmî bir sicilden doğrulandığı anlamına gelmez.
 
-Okuma sürümü 2–3 olan başarılı/mükerrer kayıtlar yeni alanlar için bir kez otomatik kuyruğa alınır. Dosya, eski sonuç ve Excel hazırlama geçmişi korunur. Yeni okuma başarılı olmadan eski kayıt yeni ayrıntılı çıktıya dahil edilmez. Mükerrer kimliğine mali sicil/cihaz numarası da katılır; farklı kasaların aynı günlük Z numarası ayrı tutulur. Firebase Authentication ve Firebase kullanıcı kimliğine göre erişim ayrımı korunmuştur; dosya ve sonuçlar mevcut Railway Volume/SQLite yapısında saklanır.
+Okuma sürümü 2–5 olan kayıtlar, yeni OCR motoruyla sürüm 6 için bir kez otomatik kuyruğa alınır. Dosya, önceki okuma tamamlanana kadar eski sonuç ve Excel hazırlama geçmişi korunur. Yeni okuma inceleme gerektiriyorsa eski başarılı sonuç geri yüklenmez; belge incelemede kalır. Okuma başarısız olsa da her açılışta yeniden kuyruğa girmez. Mükerrer kimliğine mali sicil/cihaz numarası da katılır; farklı kasaların aynı günlük Z numarası ayrı tutulur. Firebase Authentication ve Firebase kullanıcı kimliğine göre erişim ayrımı korunmuştur; dosya ve sonuçlar mevcut Railway Volume/SQLite yapısında saklanır.
+
+### Sürüm 6: ücretsiz yerel sinir ağı OCR
+
+- Varsayılan `OCR_ENGINE=paddle`: PP-OCRv5 mobil metin tespiti, yön sınıflandırması ve Türkçe destekli PP-OCRv6 small metin tanıma. ONNX Runtime CPU üzerinde çalışır; GPU veya API anahtarı gerekmez. RapidOCR `3.9.2`, ONNX Runtime `1.30.0` ve model SHA-256 özetleri sabitlenmiştir.
+- Büyük modeli otomatik olarak seçmek yerine gerçek Z raporunda süre ve alan doğruluğu karşılaştırılmıştır. Model dosyaları yaklaşık 25 MB'tır. Bu bilgisayarda uzun örnek Z raporunun tek okuması yaklaşık 9 saniye sürmüştür; sunucu ve görsele göre süre değişir.
+- `python -m scripts.setup_paddle_ocr` yalnız model ağırlıklarını indirir. Docker derlemesinde çalışır. Belge okuma sırasında model indirilmez; eksik/bozuk model anlaşılır hata verir. ONNX telemetrisi kapalıdır.
+- Her belge ayrı, en fazla 240 saniye çalışan OCR işleminde okunur; işlem bitince model belleği serbest bırakılır. Eğik satırlardaki sağ tutar sütunu geometrik olarak kendi etiketiyle birleştirilir.
+- İki okumada uyuşmayan firma adı, vergi kimliği, belge numarası ve cihaz kimliği boş bırakılır; ham okumalar saklanır. Fotoğrafta kesilmiş unvan veya olmayan bilgi üretilmez.
+- Açıkça `V.D.` / `Vergi Dairesi` olarak etiketlenmiş adlarda harf gibi basılan `$`, `1`, `5` karakterleri ad içinde düzeltilir; sayısal sözcükler korunur. Düzeltme belge notuna yazılır ve ham metin değişmez. Adresten vergi dairesi türetilmez; VKN, tarih ve tutarlara bu düzeltme uygulanmaz.
+- Eksik firma unvanı, aynı kullanıcı ve firma çalışma alanında aynı VKN / TCKN ile kontrolleri geçmiş bir belgeden otomatik tamamlanır. Hedef vergi kimliği ve kaynak unvan/vergi kimliği iki ham okumayla doğrulanır. Farklı unvanlar varsa, kaynak daha önce otomatik tamamlanmışsa veya vergi kimliği belirsizse eşleştirme yapılmaz. Kaynak belge kimliği sonuçta, dosya adı ve açıklama ekranda ve Excel'in Belge Bilgileri sayfasında saklanır. Ham OCR metni değiştirilmez; diğer eksik/tutarsız alanlar incelemeyi engellemeye devam eder.
+- Kısmen okunan belgelerde eksik/çelişen alanlar ayrıntıların başında ve ilk sorun liste satırında gösterilir. Eşleşen önceki belge bulunamayan kesilmiş unvanlar için tam fotoğraf gerekir.
+- Tam unvanlı belge sonradan yüklense de aynı çalışma alanında aynı vergi kimliğiyle incelemede bekleyen, unvanı eksik belgeler otomatik yeniden kuyruğa alınır. Tamamlanmış belgeler yeni eşleştirmelerin kaynağı yapılmadığından zincirleme tamamlama ve tekrar döngüsü oluşmaz.
+- Eski motor yalnız açıkça `OCR_ENGINE=tesseract` seçilirse kullanılabilir. Varsayılan akış Tesseract'a geri dönmez.
+
+[RapidOCR model belgeleri](https://rapidai.github.io/RapidOCRDocs/main/en/model_list/).
+
+### Sürüm 5 doğruluk düzeltmeleri
+
+- Sürüm 5'teki Tesseract `tur+eng` motoru, karşılaştırma ve geriye dönük kullanım için tutulur. Güncel varsayılan motor yukarıdaki sürüm 6 akışıdır.
+- Belirli bir fişe ait sabit tarih, saat, VKN ve tutar yazan kurallar kaldırıldı. Eksik ödeme, toplamdan kredi kartına tamamlanmaz; çelişen tutarlar çoğunluk oylamasıyla seçilmez ve fazla basamaklar silinmez.
+- Normal fişin altındaki `Z NO` / `EKÜ NO`, belgeyi Z raporuna çevirmez. Yanlış bölümdeki belge incelemede tutulur; kullanıcı belge türünü değiştirebilir. İşlem sürerken tür değiştirilemez.
+- Z raporundaki günlük satış, KDV, departman, ödeme, belge tipleri ve iptal/iade bölümleri ayrılır. Tekrar basılmış ödeme özetleri karşılaştırılır; yemek kartı ve eşit tutarlı farklı ödemeler kaybolmaz.
+- `%20.00` gibi oranlar ürün fiyatı sayılmaz. Ürünler tam okunmuş ve basılı toplam KDV ile uyuşmuşsa çok oranlı fiş dağılımı ürün tutarlarından hesaplanabilir; hesaplanan alanlar notlarda belirtilir.
+- OCR blokları görseldeki satır sırasına yerleştirilir. Alternatif denemede 180 derece dahil yön düzeltmesi, yerel gölge giderme ve uyarlamalı eşikleme kullanılır. Görsel boyutu ve piksel sayısı sınırlıdır.
+- İki okuma; eksik alanlar, sıfır tutarlar, ürün miktarı/fiyatı ve ödeme dağılımı dahil karşılaştırılır. Biri eksik/çelişkiliyse diğerinin az hatalı olması belgeyi otomatik başarılı yapmaz. Her iki ham okuma ayrıntı API'sinde saklanır.
+- VKN, belge numarası ve cihaz/mali sicil numarası için tek tek sözcük güveni de kontrol edilir. Belge ortalaması yüksek olsa bile kritik numarada düşük güven varsa inceleme gerekir; `O` harfi tahminen `0` yapılmaz.
 
 Tik, **otomatik kontrollerin geçmesi** anlamına gelir; gerçek dünyada %100 OCR doğruluğu veya muhasebe/mevzuat uygunluğu garantisi değildir. Aynı yanlış metin iki okumada da çıkabilir. Kaynak belge muhasebeci tarafından incelenmelidir. Düşük güvenli/çelişkili okumalar, tam ayrıştırılamayan çok oranlı KDV, dövizli belgeler ve toplamı uymayan Z raporları incelemede kalır. Tevkifat, özel matrah, indirilemeyen KDV ve istisna otomatik vergi kararı olarak uygulanmaz. Standart planda gider 770, gelir 600 kullanılır. Firma planı yüklüyse kırtasiye, akaryakıt, temizlik, yemek ve haberleşme ürünleri mevcut 770 alt hesaplarının adlarıyla eşleştirilir. Eşleştirme yalnız tek uygun hesap bulunduğunda yapılır; giderin vergi açısından indirilebilirliğine karar vermez. Birden fazla gider türü veya tanınmayan ürün, uygun genel gider hesabı yoksa inceleme gerektirir.
 
@@ -80,18 +106,23 @@ Depodaki `railway.toml` Dockerfile kullanır. Docker imajı Türkçe ve İngiliz
 3. `DATA_DIR=/app/data` kullanın (Docker varsayılanı). `FIREBASE_PROJECT_ID=html-web-uygulama` mevcut Firebase web yapılandırmasıyla aynıdır; başka proje kullanıyorsanız ikisini birlikte değiştirin.
 4. Firebase Authentication'da Email/Password açık olmalı, Railway domaini Authorized domains listesinde bulunmalıdır. Mevcut `TC@celikel-smm.local` hesapları kullanılabilir. API gerçek Firebase ID token imzası, süre, issuer ve audience doğrular; `X-Firebase-UID` kabul edilmez.
 5. Servisi **1 replica, 1 Gunicorn worker, 4 thread** ile çalıştırın. SQLite ve sıralı yerel OCR kuyruğu için bu dağıtım şekli gereklidir. `--preload` ve birden fazla web worker kullanmayın. Uyku/serverless modunu kapatın; arka plan kuyruğu sürekli çalışan servis gerektirir.
-6. Healthcheck `/health`. Gunicorn komutu `railway.toml` ve Dockerfile'da tanımlıdır. Eski Railway panelindeki build/start override ayarlarını kaldırın veya dosyadaki komutla eşitleyin.
+6. Healthcheck `/health`. Başlatma komutu Dockerfile'daki `ENTRYPOINT` / `CMD` üzerinden gelir; `PORT` değeri `gunicorn.conf.py` tarafından okunur. Railway panelindeki eski build/start override ayarlarını kaldırın. Docker varsayılanları `OCR_ENGINE=paddle` ve `OCR_MODEL_DIR=/app/models/ocr` şeklindedir. Derleme sırasında model dosyaları indirilir, SHA-256 kontrolü yapılır ve OCR motoru başlatılarak doğrulanır. Model indirmesi başarısızsa eksik motorla yayın yapılmaz.
 7. Deployment kesintisi sırasında işlenen belge, 10 dakikalık kira süresinin sonunda yeniden kuyruğa alınır. Bekleyen işler Volume'da saklanır. Belgeleri kaldıran bir otomatik saklama politikası yoktur; Volume kapasitesi ve yedekleri yönetilmelidir.
 
 [Railway Volume belgeleri](https://docs.railway.com/volumes). Bu sürümün kalıcı arka plan kuyruğu Vercel serverless işleyişine uygun değildir; hedef Railway'dir.
 
+Yayın öncesi Docker bulunan bir makinede `docker build -t fis-takip .` ve `docker run --rm -p 8080:8080 -e PORT=8080 -v fis-takip-data:/app/data fis-takip` ile derlemeyi ve `/health` yanıtını kontrol edin. Ardından test hesabıyla bir fiş, bir Z raporu ve çok sayfalı PDF yükleyip belge ayrıntıları ile Excel çıktısını karşılaştırın. [Railway sağlık kontrolleri](https://docs.railway.com/deployments/healthchecks) yeni deployment için başarılı HTTP yanıtı bekler.
+
 ## Yerel geliştirme
+
+Bu bilgisayarda hazırlanan Windows denemesi için `Denemeyi-Ac.cmd` dosyasına çift tıklayın. Uygulama `http://127.0.0.1:5055/app` adresinde giriş istemeden açılır. Deneme belgeleri ve ayarlar `data/deneme` altında tutulur; tekrar açıldığında korunur. Kapatmak için `Denemeyi-Kapat.cmd` kullanın. İlk açılışta “Diğer / özel şablon” ve standart hesap planı seçilir; ayarlardan değiştirilebilir.
+
+Yerel PaddleOCR modelleri `.local-tools/paddle-models` içindedir. Başka bir Windows bilgisayarda bağımlılıklardan sonra `python -m scripts.setup_paddle_ocr` çalıştırılmalıdır. Yerel araçlar, başlatıcılar ve deneme verileri Docker imajına eklenmez; Docker model kurulumunu kendisi yapar.
 
 ```powershell
 py -3.11 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
-# Tesseract ve tur/eng dil paketlerini ayrıca kurun.
-# Gerekirse TESSERACT_CMD değişkenini tesseract.exe yoluna ayarlayın.
+.\.venv\Scripts\python.exe -m scripts.setup_paddle_ocr
 .\.venv\Scripts\python.exe app.py
 ```
 
@@ -102,6 +133,8 @@ Yerel önizleme için `ALLOW_LOCAL_AUTH=1` yalnız loopback adresinde ve Railway
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
 .\.venv\Scripts\python.exe -m pytest tests -q
+# Node.js bulunan ortamda belge ayrıntıları arasındaki geçiş testleri:
+node --test tests/test_frontend.cjs
 ```
 
-Testler 125 gerçek dosya yükleme isteği, sıralı kuyruk, sayfalama, sınırlı otomatik retry, deployment kesintisi, mükerrerler, PDF sayfaları, JWT doğrulaması, kullanıcı/firma ayrımı, KDV/tutar doğrulamaları, banka/IBAN/kart eşleştirmesi, POS bankası ile kart bankasının ayrımı, döviz ve hesap çelişkileri, dönem filtresi, Excel hazırlama geçmişi ve borç/alacak tutarlılığını kapsar. Kuyruk testlerindeki OCR cevabı kontrollü test verisidir; üretim fişi fotoğraflarındaki okuma başarısını ölçmez. Gerçek OCR için sunucuda Tesseract ve temsili, bilinen doğrulukta fiş/Z örnekleriyle ayrıca kabul testi gerekir.
+Testler 125 gerçek dosya yükleme isteği, sıralı kuyruk, sayfalama, sınırlı otomatik retry, deployment kesintisi, mükerrerler, PDF sayfaları, JWT doğrulaması, kullanıcı/firma ayrımı, KDV/tutar doğrulamaları, banka/IBAN/kart eşleştirmesi, POS bankası ile kart bankasının ayrımı, döviz ve hesap çelişkileri, dönem filtresi, Excel hazırlama geçmişi ve borç/alacak tutarlılığını kapsar. PaddleOCR testleri ayrıca çevrimdışı model seçimi, satır geometrisi, çelişen/eksik kimlikler ve işlem zaman aşımını denetler. Kuyruk testlerindeki OCR cevabı kontrollü test verisidir; üretim fotoğraflarındaki başarı oranını ölçmez. Gerçek OCR ayrıca bilinen doğrulukta fiş/Z fotoğraflarıyla kontrol edilmelidir.

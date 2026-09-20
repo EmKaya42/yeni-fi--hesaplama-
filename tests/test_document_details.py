@@ -10,7 +10,7 @@ from test_workflow import RECEIPT, Z_REPORT, client, image_bytes, profile, serve
 from test_banking import configured_chart
 from services.accounting import export_workbook, journal_rows
 from services.document_extraction import extract_document
-from services.document_ocr import read_document
+from services.document_ocr import read_tesseract_document as read_document
 from services.queue_worker import process_next
 from services.storage import database, initialize
 
@@ -24,11 +24,40 @@ def sheet_rows(book, title):
     return [dict(zip(rows[0], row)) for row in rows[1:]]
 
 
-@pytest.mark.parametrize("label", ["VERGİ DAİRESİ: Kadıköy", "Kadıköy V.D. 1234567890", "VERGİ DAİRESİ Kadıköy", "V.D.: Kadıköy"])
+@pytest.mark.parametrize("label", ["VERGİ DAİRESİ: Kadıköy", "Kadıköy V.D. 1234567890", "Kadıköy V D 1234567890", "VERGİ DAİRESİ Kadıköy", "V.D.: Kadıköy"])
 def test_tax_office_preserves_turkish_name(label):
     data = extract_document(RECEIPT.replace("VERGİ DAİRESİ: Kadıköy", label), "receipts")
     assert not data["issues"] and data["tax_office"] == "Kadıköy"
     assert data["document_time"] == "14:25:36" and data["document_datetime"] == "2026-09-13T14:25:36"
+
+
+@pytest.mark.parametrize("label,expected", [
+    ("$15L1 V D 1234567890", "SISLI"),
+    ("$1$L1 V.D. 1234567890", "SISLI"),
+    ("VERGİ DAİRESİ: KAD1KOY", "KADIKOY"),
+    ("VERGİ DAİRESİ: ŞİŞLİ", "ŞİŞLİ"),
+    ("VERGİ DAİRESİ: 19 MAYIS", "19 MAYIS"),
+    ("VERGİ DAİRESİ: 19MAYIS", "19MAYIS"),
+    ("VERGİ DAİRESİ: 15 TEMMUZ", "15 TEMMUZ"),
+])
+def test_office_glyph_repair_is_scoped_to_explicit_name(label, expected):
+    text = RECEIPT.replace("VERGİ DAİRESİ: Kadıköy", label)
+    data = extract_document(text, "receipts")
+    assert not data['issues'], data['issues']
+    assert data['tax_office'] == expected
+    assert data['tax_id'] == '1234567890'
+    assert data['document_datetime'] == '2026-09-13T14:25:36'
+    assert data['total_amount'] == '120.00'
+    assert data['raw_text'] == text
+    if '$' in label or 'KAD1KOY' in label:
+        assert any('OCR karakterleri düzeltildi' in note for note in data['notes'])
+
+
+def test_office_glyph_repair_does_not_guess_from_address_or_repair_tax_id():
+    text = RECEIPT.replace('VERGİ DAİRESİ: Kadıköy', 'CADDE NO 1 $15L1/ISTANBUL')
+    assert extract_document(text, 'receipts')['tax_office'] == ''
+    text = RECEIPT.replace('VERGİ DAİRESİ: Kadıköy', '$15L1 V D 123456789O').replace('1234567890', '123456789O')
+    assert extract_document(text, 'receipts')['tax_id'] == ''
 
 
 @pytest.mark.parametrize("source,part,label", [(RECEIPT, "VERGİ DAİRESİ: Kadıköy\n", "Vergi dairesi"), (RECEIPT, " SAAT: 14:25:36", "Saat"),
@@ -213,6 +242,7 @@ def test_bracket_corrupted_topkdv_in_clean_line_and_extraction():
         "GUNLUK FIS DOKUMU\n"
         "TOPLAM *4.550,00\n"
         "[OPADV *758,33\n"
+        "KDV %20\n"
         "KREDI *4.550,00\n"
     )
     data = extract_document(z_text, "z-reports")
@@ -222,11 +252,11 @@ def test_bracket_corrupted_topkdv_in_clean_line_and_extraction():
     assert data["card_amount"] == "4550.00"
 
 
-def test_z_report_counter_discount_and_fuzzy_datetime_no_issues():
+def test_z_report_counters_and_unreadable_datetime_are_not_fabricated():
     from services.document_ocr import _clean_ocr_line
-    assert "TARIH 07/05/2026" in _clean_ocr_line("iakiv 0/i851/026")
-    assert "SAAT 01:51:02" in _clean_ocr_line("SAi 0181202")
-    assert "SISLI V.D. 3880097945" in _clean_ocr_line("515LI V D 3880097945")
+    assert _clean_ocr_line("iakiv 0/i851/026") == "iakiv 0/i851/026"
+    assert _clean_ocr_line("SAi 0181202") == "SAi 0181202"
+    assert _clean_ocr_line("515LI V D 3880097945") == "515LI V D 3880097945"
 
     z_text = (
         "SAN. TIC. LTD. STI\n"
@@ -267,7 +297,7 @@ def test_z_report_counter_discount_and_fuzzy_datetime_no_issues():
     assert data["total_amount"] == "4550.00"
     assert data["document_datetime"] == "2026-05-07T01:51:02"
     assert data["document_time"] == "01:51:02"
-    assert data["tax_office"] == "Şişli"
+    assert data["tax_office"] == "SISLI"
     assert data["tax_id"] == "3880097945"
     assert data["card_amount"] == "4550.00"
     assert data["cash_amount"] == "0.00"
@@ -276,7 +306,7 @@ def test_z_report_counter_discount_and_fuzzy_datetime_no_issues():
     assert not any("Saat" in issue for issue in data["issues"])
 
 
-def test_z_report_single_rate_topkov_and_iptal_isolation():
+def test_z_report_bad_rates_and_conflicting_payment_sections_require_review():
     from services.document_ocr import _clean_ocr_line
     raw_ocr = (
         "FORA TURIZM REKLAM\n"
@@ -341,14 +371,8 @@ def test_z_report_single_rate_topkov_and_iptal_isolation():
     )
     cleaned = "\n".join(_clean_ocr_line(l) for l in raw_ocr.splitlines())
     data = extract_document(cleaned, "z-reports")
-    assert not data["issues"], data["issues"]
+    assert data["issues"]
     assert data["total_amount"] == "35650.00"
-    assert data["vat_amount"] == "5941.66"
-    assert data["vat_breakdown"] == [{"rate": 20, "base": "29708.34", "tax": "5941.66"}]
     assert data["document_no"] == "1880"
-    assert data["card_amount"] == "35650.00"
-    assert data["cash_amount"] == "0.00"
-    assert data["tax_id"] == "3880097945"
-
-
-
+    assert data["tax_id"] == ""
+    assert any("çelişiyor" in issue or "uyuşmuyor" in issue for issue in data["issues"])

@@ -10,7 +10,7 @@ from decimal import Decimal
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
-from services.document_extraction import decimal_money, folded, receipt_description
+from services.document_extraction import EXTRACTION_VERSION, decimal_money, folded, receipt_description
 from services.account_chart import select_account
 from services.banking import BANK_BY_CODE, extract_payments
 
@@ -180,8 +180,8 @@ def journal_rows(documents, profile):
         start = len(rows)
         is_z = document["kind"] == "z-reports"
         description = f"Z Raporu {data['document_no']}" if is_z else receipt_description(data)
-        if data.get("extraction_version", 0) < 4:
-            raise ValueError("Yeni belge alanları için kaynak dosya yeniden okunmalı.")
+        if data.get("extraction_version", 0) < EXTRACTION_VERSION:
+            raise ValueError("Güncel okuma kontrolleri için kaynak dosya yeniden okunmalı.")
         if not data.get("tax_office") or not data.get("document_time") or (is_z and (not (data.get("fiscal_id") or data.get("device_no")) or data.get("transaction_count") is None)):
             raise ValueError("Zorunlu belge bilgileri eksik; kaynak dosya yeniden okunmalı.")
         if document.get("chart_id", "") != profile.get("chart_id", ""):

@@ -44,7 +44,7 @@ def local_auth():
         return False
     if os.getenv("RAILWAY_ENVIRONMENT_ID") or os.getenv("VERCEL"):
         return False
-    return os.getenv("ALLOW_LOCAL_AUTH", "1") == "1" and request.remote_addr in {"127.0.0.1", "::1"}
+    return os.getenv("ALLOW_LOCAL_AUTH", "0") == "1" and request.remote_addr in {"127.0.0.1", "::1"}
 
 
 @app.before_request
@@ -183,6 +183,8 @@ def format_document(row, profile, detail=False):
             doc["error"] = str(error)
     if not detail:
         doc["result"].pop("raw_text", None)
+        doc["result"].pop("normalized_text", None)
+        doc["result"].pop("ocr_reads", None)
         if doc.get("accounting"):
             doc["accounting"].pop("rows", None)
     return doc
@@ -376,10 +378,13 @@ def switch_document_kind(doc_id):
     row = owned_document(doc_id)
     target_kind = "z-reports" if row["kind"] == "receipts" else "receipts"
     with database(DB_PATH) as db:
+        db.execute("BEGIN IMMEDIATE")
         existing = db.execute("SELECT id FROM documents WHERE user_id=? AND kind=? AND digest=? AND page=?", (g.user_id, target_kind, row["digest"], row["page"])).fetchone()
         if existing:
             return jsonify(error="Bu belge hedef sekmede zaten kayıtlı."), 409
-        db.execute("UPDATE documents SET kind=?,status='queued',attempts=0,error='',started_at=NULL,retry_after=0,auto_retries=0,fingerprint=NULL,duplicate_of=NULL WHERE id=? AND user_id=?", (target_kind, doc_id, g.user_id))
+        changed = db.execute("UPDATE documents SET kind=?,direction=?,status='queued',attempts=0,result='{}',error='',started_at=NULL,retry_after=0,auto_retries=0,fingerprint=NULL,duplicate_of=NULL WHERE id=? AND user_id=? AND status NOT IN ('queued','processing')", (target_kind, 'income' if target_kind == 'z-reports' else 'expense', doc_id, g.user_id)).rowcount
+        if not changed:
+            return jsonify(error="Okuma tamamlandıktan sonra belge türünü değiştirebilirsiniz."), 409
     return jsonify(ok=True, kind=target_kind)
 
 

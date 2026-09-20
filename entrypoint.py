@@ -1,19 +1,9 @@
 import os
 import shlex
 import sys
-import subprocess
 
-# Ensure gunicorn is patched before running anything
-try:
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    patch_script = os.path.join(script_dir, "patch_gunicorn.py")
-    if os.path.exists(patch_script):
-        subprocess.run([sys.executable, patch_script], check=False)
-except Exception as e:
-    print(f"Warning: could not run patch_gunicorn.py: {e}")
-
-port = os.getenv("PORT", "5000")
-if not port.isdigit():
+port = os.getenv("PORT", "5000").strip()
+if not port.isdigit() or not 1 <= int(port) <= 65535:
     port = "5000"
 
 args = sys.argv[1:]

@@ -4,17 +4,29 @@ from __future__ import annotations
 import re
 from decimal import Decimal
 
-from services.document_extraction import MONEY, decimal_money, folded
+from services.document_extraction import MONEY, decimal_money, folded, unlabeled_tax_identity
 
 ADJUSTMENT_LABELS = {"discount": "İndirim", "cancellation": "İptal", "refund": "İade"}
 
 
+def normalize_office_name(value):
+    """Repair letter-shaped OCR glyphs only in an explicitly labelled office name.
+
+    Numeric words (e.g. 19 MAYIS) and mixed words containing other digits are
+    preserved. This is never applied to the source text, VKN, amounts or dates.
+    """
+    def repair(match):
+        word = match[0]
+        if not re.search(r"[A-Za-zÇçĞğİıÖöŞşÜü]", word) or re.search(r"[02346789]", word):
+            return word
+        return word.translate(str.maketrans({"$": "S", "1": "I", "5": "S"}))
+    return re.sub(r"[A-Za-zÇçĞğİıÖöŞşÜü0-9$]+", repair, value)
+
+
 def extract_details(original, kind, total, issues, notes):
-    try:
-        from services.document_ocr import _clean_ocr_line as _cl
-        lines = [_cl(folded(line)) for line in original]
-    except ImportError:
-        lines = [folded(line) for line in original]
+    from services.ocr_text import clean_ocr_line
+    original = [clean_ocr_line(line) for line in original]
+    lines = [folded(line) for line in original]
     is_z = kind == "z-reports" or any(re.search(r"\bZ\s*RAPOR", line) for line in lines)
 
     def unique(values, label):
@@ -29,23 +41,7 @@ def extract_details(original, kind, total, issues, notes):
             issues.append(f"{label} alanları çelişiyor.")
         return deduped[0] if deduped else ""
 
-    KNOWN_DISTRICTS = {
-        "SISLI": "Şişli", "KADIKOY": "Kadıköy", "BEYOGLU": "Beyoğlu", "BESIKTAS": "Beşiktaş",
-        "USKUDAR": "Üsküdar", "UMRANIYE": "Ümraniye", "FATIH": "Fatih", "BAKIRKOY": "Bakırköy",
-        "SARIYER": "Sarıyer", "MECIDIYEKOY": "Mecidiyeköy", "ZINCIRLIKUYU": "Zincirlikuyu",
-        "MASLAK": "Maslak", "MERTER": "Merter", "GUNGOREN": "Güngören", "KARTAL": "Kartal",
-        "PENDIK": "Pendik", "MALTEPE": "Maltepe", "TUZLA": "Tuzla", "BEYKOZ": "Beykoz",
-        "AVCILAR": "Avcılar", "BUYUKCEKMECE": "Büyükçekmece", "KUCUKCEKMECE": "Küçükçekmece",
-        "BAHCELIEVLER": "Bahçelievler", "BAGCILAR": "Bağcılar", "ESENLER": "Esenler",
-        "BAYRAMPASA": "Bayrampaşa", "GAZIOSMANPASA": "Gaziosmanpaşa", "EYUPSULTAN": "Eyüpsultan",
-        "CANKAYA": "Çankaya", "YENIMAHALLE": "Yenimahalle", "KIZILAY": "Kızılay", "ULUS": "Ulus",
-        "KONAK": "Konak", "KARSIYAKA": "Karşıyaka", "BORNOVA": "Bornova", "CIGLI": "Çiğli",
-        "NILUFER": "Nilüfer", "OSMANGAZI": "Osmangazi", "MURATPASA": "Muratpaşa", "SEYHAN": "Seyhan",
-        "MERAM": "Meram", "SELCUKLU": "Selçuklu", "SAHINBEY": "Şahinbey", "SEHITKAMIL": "Şehitkamil",
-        "KOCASINAN": "Kocasinan", "MELIKGAZI": "Melikgazi", "IZMIT": "İzmit", "GEBZE": "Gebze",
-    }
-
-    offices = []
+    offices = [office for office, _ in unlabeled_tax_identity(original)]
     for raw, line in zip(original, lines):
         prefix = re.match(r"^(?:VERGI\s+DAIRESI|V\.?\s*D\.?)(?:\s*[:=-]\s*|\s+)", line)
         suffix = re.search(r"\s+(?:VERGI\s+DAIRESI|V\.?\s*D\.?)(?=\s|:|$)", line)
@@ -54,29 +50,13 @@ def extract_details(original, kind, total, issues, notes):
         elif suffix:
             value = re.sub(r"[\[\]]", "", raw[:suffix.start()]).strip(" :;-/")
         else:
-            # Match district word immediately preceding VKN: 'ŞİŞLİ 3880097945' or 'ŞİŞLİ V.D. 3880097945'
-            vkn_match = re.search(r"\b([A-Za-zÇçĞğİıÖöŞşÜü]{3,})\s*(?:V\.?D\.?)?\s*(\d{10,11})\b", raw)
-            if vkn_match:
-                candidate = vkn_match.group(1).strip(" :;-/[]")
-                if folded(candidate) not in {"VERGI", "DAIRESI", "TARIH", "FATURA", "BELGE", "RAPOR", "MUSTERI", "SATIS"}:
-                    value = candidate
-                else:
-                    continue
-            else:
-                continue
-        f_val = folded(value)
-        if f_val in {"SISL", "SISLI", "SISLIF", "SIU", "IU", "SISU"} or (f_val.startswith("SIS") and len(f_val) <= 6):
-            value = "Şişli"
+            continue
+        normalized = normalize_office_name(value)
+        if normalized != value:
+            notes.append(f'Vergi dairesi adındaki OCR karakterleri düzeltildi: “{value}” → “{normalized}”.')
+        value = normalized
         if re.search(r"[A-Z]{2}", folded(value)):
             offices.append(value)
-
-    # Inspect header lines (first 8 lines) for known districts only if not already found
-    if not offices:
-        for raw, line in zip(original[:8], lines[:8]):
-            for key, name in KNOWN_DISTRICTS.items():
-                if re.search(r"\b" + key + r"\b", line):
-                    offices.append(name)
-                    break
 
     tax_office = unique(offices, "Vergi dairesi")
 
@@ -88,7 +68,7 @@ def extract_details(original, kind, total, issues, notes):
                 values.append(re.sub(r"\s+", "", match[1]))
         return unique(values, label)
 
-    fiscal_id = code(r"(?:MALI\s*SICIL(?:\s*(?:NO|NUMARASI))?|MF(?:\s*NO)?|EKU\s*NO)", "Mali sicil numarası")
+    fiscal_id = code(r"(?:MALI\s*SICIL(?:\s*(?:NO|NUMARASI))?|MF(?:\s*NO)?)", "Mali sicil numarası")
     if not fiscal_id:
         for line in lines[-10:]:
             jh_match = re.search(r"\b([A-Z]{2})\s*(\d{8,10})\b", line)
@@ -100,7 +80,8 @@ def extract_details(original, kind, total, issues, notes):
     saat_kw = r"(?:SAAT|SA[Iİ1]|SAT|SMT|S4AT|SA\s*AT)"
     for line in lines:
         # SAAT-labeled match (strongest signal)
-        saat_match = re.search(r"\b" + saat_kw + r"\s*[:;=-]?\s*([0-2]?\d)\s*[:;.,\- ]\s*([0-5]\d)(?:\s*[:;.,\- ]\s*([0-5]\d))?\b", line)
+        label = re.search(r"\b" + saat_kw + r"\b", line)
+        saat_match = re.search(r"(?<!\d)([0-2]?\d)\s*[:;.]\s*([0-5]\d)(?:\s*[:;.]\s*([0-5]\d))?\b", line[label.end():]) if label else None
         if saat_match and int(saat_match[1]) <= 23:
             clocks.append(f"{int(saat_match[1]):02}:{saat_match[2]}" + (f":{saat_match[3]}" if saat_match[3] else ""))
             continue
@@ -110,7 +91,7 @@ def extract_details(original, kind, total, issues, notes):
             clocks.append(f"{int(cont_match[1]):02}:{cont_match[2]}:{cont_match[3]}")
             continue
         if not clocks:
-            for match in re.finditer(r"(?<![\d/.])([0-2]?\d)\s*[:;.]\s*([0-5]\d)(?:\s*[:;.]\s*([0-5]\d))?(?![\d/.])", line):
+            for match in re.finditer(r"(?<![\d/.])([0-2]?\d):([0-5]\d)(?::([0-5]\d))?(?![\d/.])", line):
                 if int(match[1]) <= 23:
                     clocks.append(f"{int(match[1]):02}:{match[2]}" + (f":{match[3]}" if match[3] else ""))
     document_time = unique(clocks, "Saat")
@@ -127,26 +108,13 @@ def extract_details(original, kind, total, issues, notes):
             money = re.findall(MONEY, tail)
             if money:
                 amounts.append(str(abs(decimal_money(money[-1]))))
-            elif not money:
-                # Look ahead up to 6 lines for an amount (some formats have TUTAR on next line)
-                sub_amounts = []
-                for sub in lines[idx + 1:idx + 7]:
-                    # Stop at next section header
-                    if re.match(r"^(?:BELGE|SAYACLAR|KASIYER|ODEME|TOPLAM|DEPARTMAN|MALI|Z\s*RAPORU)", sub):
-                        break
-                    # Explicit TUTAR sub-line
-                    if re.match(r"^(?:TUTAR|INDIRIM\s+TUTAR|ISKONTO\s+TUTAR)\b", sub):
-                        sub_vals = re.findall(MONEY, re.sub(r"\*", "", sub))
-                        if sub_vals:
-                            sub_amounts.append(str(abs(decimal_money(sub_vals[-1]))))
-                        break
-                    # '-SATIS TOPLAMI *amount' pattern
-                    if re.match(r"^[-~*•]?\s*SATIS\s+TOPLAM[Iİ]?\b", sub):
-                        sub_vals = re.findall(MONEY, re.sub(r"\*", "", sub))
-                        if sub_vals:
-                            sub_amounts.append(str(abs(decimal_money(sub_vals[-1]))))
-                        break
-                amounts.extend(sub_amounts)
+            elif idx + 1 < len(lines):
+                # A bare TUTAR belongs only to the immediately preceding label.
+                sub = lines[idx + 1]
+                if re.match(r"^TUTAR\b", sub):
+                    sub_values = re.findall(MONEY, sub)
+                    if sub_values:
+                        amounts.append(str(abs(decimal_money(sub_values[-1]))))
             count = re.search(r"(?:ADE(?:T|DI)|SAYI(?:SI)?)\s*[:=]?\s*(\d+)\b(?![.,]\d)|\b(\d+)\s*ADET\b|^\s*[:=]?\s*(\d+)\s*$", tail)
             if not count and money:
                 count = re.match(r"\s*[:=]?\s*(\d+)\s+(?=" + MONEY + r")", tail)
@@ -157,8 +125,7 @@ def extract_details(original, kind, total, issues, notes):
             count = unique(counts, ADJUSTMENT_LABELS[key] + " adedi")
             adjustments[key] = {"amount": amount, "count": count if count != "" else None}
             if amount == "":
-                if not (is_z and key == "discount"):
-                    issues.append(f"{ADJUSTMENT_LABELS[key]} alanı var ancak tutarı okunamadı.")
+                issues.append(f"{ADJUSTMENT_LABELS[key]} alanı var ancak tutarı okunamadı.")
             if not is_z and key != "discount" and amount and decimal_money(amount) > 0:
                 issues.append("İptal/iade içeren fişin net ürün ve KDV dağılımı incelenmeli.")
 
@@ -166,7 +133,7 @@ def extract_details(original, kind, total, issues, notes):
     # Priority 1: Customer / OKC sales receipt count
     for idx, line in enumerate(lines):
         clean_ln = line.lstrip(" -~•*#'")
-        match = re.match(r"^(?:(?:(?:TOPLAM|SATIS)\s+)?(?:FIS|ISLEM|BELGE)\s*(?:ADEDI|SAYISI|SAY|ADET(?:I)?)|(?:OKC|MUSTERI)\s+(?:FIS(?:LER(?:I)?)?|ISLEM)\s*(?:ADEDI?|SAYISI?|ADETI?)?)\s*[:=]?\s*(\d+)?\s*$", clean_ln)
+        match = re.match(r"^(?:(?:(?:TOPLAM|SATIS)\s+)?(?:FIS|ISLEM|BELGE)\s*(?:ADEDI|SAYISI|SAY|ADET(?:I)?)|(?:OKC|MUSTERI)\s+(?:FIS(?:I|LER(?:I)?)?|ISLEM)\s*(?:ADEDI?|SAYISI?|ADETI?)?)\s*[:=]?\s*(\d+)?\s*$", clean_ln)
         if match:
             if match.group(1):
                 counts.append(int(match.group(1)))

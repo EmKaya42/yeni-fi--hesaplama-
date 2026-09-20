@@ -139,209 +139,111 @@ def bank_evidence(text):
 
 
 def extract_payments(text, total, kind):
-    entries, issues = [], []
+    from services.ocr_text import clean_ocr_line, z_sections
+
+    issues = []
     evidence = bank_evidence(text)
     issues.extend(evidence.pop("issues"))
-    pattern = r"\b(YEMEK\s*KARTI|PLUXEE|SODEXO|MULTINET|EDENRED|SETCARD|METROPOL\s*KART|TICKET(?:\s*RESTAURANT)?|BANKA\s*[/]\s*KRED[Iİ](?:\s*KART[Iİ]|\s*KARU|\s*RARU)?|BANKA\s*KARTI|DEBIT|KREDI\s*KARTI|CREDIT|NAKIT|KREDI|HAVALE|EFT|FAST|POS|KART(?:LA)?\s*ODEME|DIGER\s*(?:ODEME|TAHSILAT)|ACIK\s*HESAP|VERESIYE)\b"
-    try:
-        from services.document_ocr import _clean_ocr_line as _cl
-        lines = [_cl(folded(line.strip())) for line in text.splitlines() if line.strip()]
-    except ImportError:
-        lines = [folded(line.strip()) for line in text.splitlines() if line.strip()]
-    
-    # Detect Z-report: by kind, or by OCR text (handles OCR corruption like '2 RAPORU', 'Z RAPCRU')
-    is_z = (
-        kind == "z-reports"
-        or bool(re.search(r"\b[Z2]\s*(?:RAPORU?|RAPC?R[UO]?)\b|\bGUNLUK\s*FI[SŞ]\s*DOK[UÜ]M[UÜ]\b|\bRAPOR\s*(?:NO|V[O0])\b", folded(text)))
-        or bool(re.search(r"\bMAL[I\u0130]\s*BELLEK\b", folded(text)))
-    )
-    in_belge_tipleri = False
-    fallback_entries = []
-    _belge_tipleri_pattern = re.compile(r"[-~•*+']?\s*(NAKIT|[I1l]akii|KREDI\s*KARTI|KREDI|KRED[Iİ1]|Khedi|Kkedi|'Nil|'PDl|~PDl|'HDl|KRio|DIGER\s*(?:ODEME|TAHSILAT)?|DIGER|YEMEK\s*KARTI|PLUXEE|SODEXO|MULTINET|EDENRED|SETCARD|METROPOL\s*KART|TICKET(?:\s*RESTAURANT)?|BANKA\s*KARTI|DEBIT|POS|HAVALE|EFT|FAST)\b")
-    for index, line in enumerate(lines):
-        # BELGE TIPLERI detection applies regardless of is_z flag (section only exists in Z-reports)
-        if re.search(r"\bBELGE\s*TIP[LI]ERI\b", line):
-            in_belge_tipleri = True
-            if not is_z:
-                is_z = True
+    pattern = r"\b(YEMEK\s*KARTI|PLUXEE|SODEXO|MULTINET|EDENRED|SETCARD|METROPOL\s*KART|TICKET(?:\s*RESTAURANT)?|BANKA\s*[/]\s*KREDI(?:\s*KARTI|\s*KARU)?|BANKA\s*KARTI|DEBIT|KREDI\s*KARTI|CREDIT|NAKIT|KREDI|HAVALE|EFT|FAST|POS|KART(?:LA)?\s*ODEME|DIGER(?:\s*(?:ODEME|TAHSILAT))?|ACIK\s*HESAP|VERESIYE)\b"
+    lines = [folded(clean_ocr_line(line)) for line in text.splitlines() if line.strip()]
+    is_z = kind == "z-reports"
+    sections = list(z_sections(lines)) if is_z else [("general", line) for line in lines]
+    groups = {"main": [], "documents": []}
+    missing = {"main": [], "documents": []}
+    for index, (section, line) in enumerate(sections):
+        if section not in {"general", "daily", "payments", "documents"}:
             continue
-        if in_belge_tipleri:
-            if re.search(r"\b(?:SAYACLAR|KASIYER|KASYER|EKU|JH|MAL\s*F)\b", line):
-                in_belge_tipleri = False
-            else:
-                match_bt = _belge_tipleri_pattern.search(line)
-                if match_bt:
-                    label = re.sub(r"\s", "", match_bt.group(1))
-                    cleaned = re.sub(r"[*•+~'/]", "", line)
-                    vals = re.findall(MONEY, cleaned)
-                    # If no amount on this line, look at next line (e.g. '-KREDI 33\nKREDI 35.650,00')
-                    if not vals and index + 1 < len(lines):
-                        next_clean = re.sub(r"[*•+~'/]", "", lines[index + 1])
-                        vals = re.findall(MONEY, next_clean)
-                    if vals:
-                        method = "meal_card" if re.fullmatch(r"YEMEKKARTI|PLUXEE|SODEXO|MULTINET|EDENRED|SETCARD|METROPOLKART|TICKET(?:RESTAURANT)?", label) else "cash" if label in {"NAKIT", "IAKTT"} or "AKII" in label else "debit_card" if label in {"BANKAKARTI", "DEBIT"} else "card" if (label in {"KREDIKARTI", "CREDIT", "KREDI"} or "KREDI" in label or "KRED" in label or label in {"'Nil", "'PDl", "~PDl", "'HDl", "KRio", "Khedi", "Kkedi"}) else "bank_transfer" if label in {"HAVALE", "EFT", "FAST"} else "pos" if label in {"POS", "KARTODEME", "KARTLAODEME"} else "other"
-                        amount = decimal_money(vals[-1])
-                        fb_entry = {"method": method, "amount": str(amount), "bank_code": "", "bank_role": "acquirer" if method in {"card", "debit_card", "pos"} else "unspecified"}
-                        if method == "meal_card":
-                            fb_entry["provider"] = "" if label == "YEMEKKARTI" else label
-                        fallback_entries.append(fb_entry)
-                continue
         match = re.search(pattern, line)
         if not match or re.search(r"IADE|IPTAL|KOMISYON|ISLEM\s*(?:NO|SAYISI)|KART\s*(?:NO|NUMARASI)", line):
             continue
-        # Skip Z-report sub-section lines only if inside belge_tipleri (already processed)
-        if in_belge_tipleri and line.lstrip().startswith(("-", "~", "'~", "*", "•", "+")):
-            continue
-        # Strip OCR asterisks, slashes, and noise before searching for amounts
-        tail = re.sub(r"[*•+~'/]", "", line[match.end():])
-        # Remove trailing count digit (e.g. 'KREDI 33' -> 33 is count not amount)
-        tail_no_count = re.sub(r"^\s*\d{1,4}\s*$", "", tail.strip())
-        values = re.findall(MONEY, tail_no_count if tail_no_count else tail)
-        # Look up to 3 lines ahead for the amount (e.g. Z-report: KREDI 33 / TOPLAM 35.650,00)
-        if not values:
-            for lookahead in range(1, 4):
-                if index + lookahead < len(lines):
-                    next_l = re.sub(r"[*•+~'/]", "", lines[index + lookahead])
-                    clean_hdr = re.sub(r"^[✓vV\s]+", "", next_l).strip()
-                    if (
-                        re.fullmatch(r"[\s*:=TL0-9.,+-]+", clean_hdr)
-                        or re.search(r"\b(?:TOPLAM|TOPLA|IOPLAM|T0PLAM|JOPLAM|TOPUAA|SATIS|TUTAR)\b", clean_hdr)
-                    ):
-                        nxt_vals = re.findall(MONEY, clean_hdr)
-                        if nxt_vals:
-                            values = nxt_vals
-                            break
-                    elif re.search(pattern, clean_hdr):
-                        # Next line is a new payment keyword, stop
-                        break
-        if not values:
-            continue
+        group = "documents" if section == "documents" else "main"
+        tail = line[match.end():]
+        values = re.findall(MONEY, tail)
+        amount_line = tail
+        if not values and index + 1 < len(sections):
+            next_section, next_line = sections[index + 1]
+            # Only the immediately following numeric/TOPLAM/TUTAR line belongs
+            # to this payment. Never borrow from another method or report section.
+            amount_only = re.fullmatch(r"[\s*:=TLRY₺0-9.,+-]+", next_line)
+            labeled_amount = is_z and re.match(r"^(?:TOPLAM|TUTAR)\b", next_line)
+            if next_section == section and (amount_only or labeled_amount):
+                values = re.findall(MONEY, next_line)
+                amount_line = next_line
         label = re.sub(r"\s", "", match.group())
-        method = "meal_card" if re.fullmatch(r"YEMEKKARTI|PLUXEE|SODEXO|MULTINET|EDENRED|SETCARD|METROPOLKART|TICKET(?:RESTAURANT)?", label) else "cash" if label in {"NAKIT", "IAKTT"} or "AKII" in label else "debit_card" if label in {"BANKAKARTI", "DEBIT"} else "card" if (label in {"KREDIKARTI", "CREDIT", "KREDI"} or "KREDI" in label or "KRED" in label or label in {"'Nil", "'PDl", "~PDl", "'HDl", "KRio", "Khedi", "Kkedi"}) else "bank_transfer" if label in {"HAVALE", "EFT", "FAST"} else "pos" if label in {"POS", "KARTODEME", "KARTLAODEME"} else "other"
+        if not values:
+            missing[group].append(label)
+            continue
+        if len(values) != 1:
+            issues.append("Ödeme satırında birden fazla tutar var; sütunlar incelenmeli.")
+        meal = re.fullmatch(r"YEMEKKARTI|PLUXEE|SODEXO|MULTINET|EDENRED|SETCARD|METROPOLKART|TICKET(?:RESTAURANT)?", label)
+        if meal:
+            method = "meal_card"
+        elif label == "NAKIT":
+            method = "cash"
+        elif label in {"BANKAKARTI", "DEBIT"}:
+            method = "debit_card"
+        elif label.startswith("BANKA/") or label in {"POS", "KARTODEME", "KARTLAODEME"}:
+            method = "pos"
+        elif label in {"KREDIKARTI", "CREDIT", "KREDI"}:
+            method = "card"
+        elif label in {"HAVALE", "EFT", "FAST"}:
+            method = "bank_transfer"
+        else:
+            method = "other"
         amount = decimal_money(values[-1])
-        # If an OCR artifact prepended a digit (like 4 or 7 from a pen checkmark or asterisk) making amount exceed total:
-        if total and amount > decimal_money(total):
-            s_amt = str(amount)
-            s_tot = str(decimal_money(total))
-            if len(s_amt) > len(s_tot) and s_amt.endswith(s_tot):
-                amount = decimal_money(s_tot)
-            elif s_amt.startswith(("4", "7", "5")) and s_amt[1:] == s_tot:
-                amount = decimal_money(s_amt[1:])
-        if amount < 0 or re.search(r"-\s*[*₺]?\s*" + re.escape(values[-1]), line):
+        if re.search(r"-\s*[*₺]?\s*" + re.escape(values[-1]), amount_line):
             issues.append("Negatif ödeme satırı incelenmeli.")
         codes = identify_banks(line)
-        entry = {"method": method, "amount": str(amount), "bank_code": codes[0] if len(codes) == 1 else "", "bank_role": "acquirer" if method in {"card", "debit_card", "pos"} else "unspecified"}
-        if method == "meal_card":
+        if len(codes) > 1:
+            issues.append("Ödeme satırındaki banka bilgileri çelişiyor.")
+        entry = {"method": method, "amount": str(amount), "bank_code": codes[0] if len(codes) == 1 else "",
+                 "bank_role": "acquirer" if method in {"card", "debit_card", "pos"} else "unspecified"}
+        if meal:
             entry["provider"] = "" if label == "YEMEKKARTI" else label
-        entries.append(entry)
+        groups[group].append(entry)
 
-    # Z reports may contain both total card takings and bank-by-bank detail.
-    if kind == "z-reports":
-        meals = [entry for entry in entries if entry["method"] == "meal_card"]
-        detailed_meals = [entry for entry in meals if entry.get("provider")]
-        summary_meals = [entry for entry in meals if not entry.get("provider")]
-        if detailed_meals and len(summary_meals) == 1:
-            if sum((decimal_money(entry["amount"]) for entry in detailed_meals), Decimal(0)) == decimal_money(summary_meals[0]["amount"]):
-                entries.remove(summary_meals[0])
-            else:
-                issues.append("Yemek kartı ayrıntıları yemek kartı toplamıyla uyuşmuyor.")
-        cards = [entry for entry in entries if entry["method"] in {"card", "debit_card", "pos"}]
-        detailed = [entry for entry in cards if entry["bank_code"]]
-        summaries = [entry for entry in cards if not entry["bank_code"]]
-        if detailed and len(summaries) == 1:
-            if sum((decimal_money(entry["amount"]) for entry in detailed), Decimal(0)) == decimal_money(summaries[0]["amount"]):
-                entries.remove(summaries[0])
-            else:
-                issues.append("Banka bazındaki POS toplamları kart toplamıyla uyuşmuyor.")
-
-    # Fallback for Z-reports: if entries is empty OR sum of entries does not match total, check fallback_entries
-    if is_z and fallback_entries:
-        tot_dec = decimal_money(total) if total else None
-        main_sum = sum((decimal_money(e["amount"]) for e in entries), Decimal(0)) if entries else None
-        if not entries or (tot_dec is not None and main_sum != tot_dec):
-            fb_sum = sum((decimal_money(e["amount"]) for e in fallback_entries), Decimal(0))
-            fb_nonzero = [e for e in fallback_entries if decimal_money(e["amount"]) > 0]
-            fb_nonzero_sum = sum((decimal_money(e["amount"]) for e in fb_nonzero), Decimal(0))
-            if tot_dec is not None and (fb_sum == tot_dec or fb_nonzero_sum == tot_dec):
-                entries = fallback_entries
-                issues = [i for i in issues if i not in {"Yemek kartı ayrıntıları yemek kartı toplamıyla uyuşmuyor.", "Banka bazındaki POS toplamları kart toplamıyla uyuşmuyor."}]
-            elif tot_dec is None and not entries:
-                entries = fallback_entries
-
-    # Deduplication and reconciliation
-    if is_z and total and decimal_money(total) > 0:
-        total_dec = decimal_money(total)
-        # Deduplicate entries
-        unique_entries = []
-        seen = set()
-        for e in entries:
-            key = (e.get("method"), e.get("amount"), e.get("bank_code", ""))
-            if key not in seen:
-                seen.add(key)
-                unique_entries.append(e)
-        entries = unique_entries
-
-        current_sum = sum((decimal_money(e["amount"]) for e in entries), Decimal(0))
-        if current_sum != total_dec:
-            exact_matches = [e for e in entries if decimal_money(e["amount"]) == total_dec]
-            if exact_matches:
-                cash_zeros = [e for e in entries if e["method"] == "cash" and decimal_money(e["amount"]) == 0]
-                entries = cash_zeros + [exact_matches[0]]
-            else:
-                cash_entries = [e for e in entries if e["method"] == "cash"]
-                card_entries = [e for e in entries if e["method"] in {"card", "debit_card", "pos"}]
-                cash_amt = sum((decimal_money(e["amount"]) for e in cash_entries), Decimal(0))
-                card_amt = sum((decimal_money(e["amount"]) for e in card_entries), Decimal(0))
-                has_card_mention = bool(re.search(r"\b(?:KREDI|KART|POS|CREDIT|BANKAKART|BELGE\s*TIPLERI)\b", folded(text)))
-                has_cash_mention = bool(re.search(r"\bNAKIT\b", folded(text)))
-
-                # If Cash is 0 (or no positive cash) and card is mentioned or implied
-                if cash_amt == 0 and (has_card_mention or not has_cash_mention or card_amt > 0 or not entries):
-                    card_entry = {"method": "card", "amount": str(total_dec), "bank_code": "", "bank_role": "acquirer"}
-                    entries = [e for e in entries if e["method"] != "card"] + [card_entry]
-                elif not entries:
-                    if has_card_mention or not has_cash_mention:
-                        entries = [{"method": "card", "amount": str(total_dec), "bank_code": "", "bank_role": "acquirer"}]
-                    else:
-                        entries = [{"method": "cash", "amount": str(total_dec), "bank_code": "", "bank_role": "unspecified"}]
+    def reconcile_detail(entries):
+        if not is_z:
+            return
+        for methods, identity, message in (
+            ({"meal_card"}, "provider", "Yemek kartı ayrıntıları yemek kartı toplamıyla uyuşmuyor."),
+            ({"card", "debit_card", "pos"}, "bank_code", "Banka bazındaki POS toplamları kart toplamıyla uyuşmuyor."),
+        ):
+            selected = [entry for entry in entries if entry["method"] in methods]
+            details = [entry for entry in selected if entry.get(identity)]
+            summaries = [entry for entry in selected if not entry.get(identity)]
+            if details and len(summaries) == 1:
+                if sum((decimal_money(entry["amount"]) for entry in details), Decimal(0)) == decimal_money(summaries[0]["amount"]):
+                    entries.remove(summaries[0])
                 else:
-                    issues.append("Ödeme dağılımı belge toplamıyla uyuşmuyor.")
-    elif entries and total:
-        total_dec = decimal_money(total)
-        current_sum = sum((decimal_money(entry["amount"]) for entry in entries), Decimal(0))
-        if current_sum != total_dec:
-            unique_entries = []
-            seen = set()
-            for e in entries:
-                key = (e.get("method"), e.get("amount"), e.get("bank_code", ""))
-                if key not in seen:
-                    seen.add(key)
-                    unique_entries.append(e)
-            if sum((decimal_money(e["amount"]) for e in unique_entries), Decimal(0)) == total_dec:
-                entries = unique_entries
-            elif sum((decimal_money(e["amount"]) for e in unique_entries if decimal_money(e["amount"]) > 0), Decimal(0)) == total_dec:
-                entries = unique_entries
-            else:
-                matching = [e for e in unique_entries if decimal_money(e["amount"]) == total_dec]
-                if matching:
-                    entries = [matching[0]]
-                else:
-                    issues.append("Ödeme dağılımı belge toplamıyla uyuşmuyor.")
+                    issues.append(message)
+
+    for entries in groups.values():
+        reconcile_detail(entries)
+    entries = groups["main"] or groups["documents"]
+    selected_group = "main" if groups["main"] else "documents"
+    if groups["main"] and groups["documents"]:
+        def totals_by_method(values):
+            totals = {}
+            for entry in values:
+                method = "pos" if entry["method"] in {"card", "debit_card", "pos"} else entry["method"]
+                totals[method] = totals.get(method, Decimal(0)) + decimal_money(entry["amount"])
+            return {key: value for key, value in totals.items() if value}
+        if totals_by_method(groups["main"]) != totals_by_method(groups["documents"]):
+            issues.append("Ödeme bilgileri ile belge tiplerindeki tahsilatlar çelişiyor.")
+    if missing[selected_group]:
+        issues.append("Ödeme alanı var ancak tutarı okunamadı.")
     if not entries:
-        if is_z and total and decimal_money(total) > 0:
-            tot_dec = decimal_money(total)
-            if re.search(r"\b(?:KREDI|KART|POS|CREDIT|BELGE\s*TIPLERI)\b", folded(text)):
-                entries = [{"method": "card", "amount": str(tot_dec), "bank_code": "", "bank_role": "acquirer"}]
-            else:
-                entries = [{"method": "cash", "amount": str(tot_dec), "bank_code": "", "bank_role": "unspecified"}]
-        else:
-            issues.append("Ödeme yöntemi ve tutarı okunamadı.")
-    if kind == "receipts" and any(entry["method"] == "pos" for entry in entries):
+        issues.append("Ödeme yöntemi ve tutarı okunamadı.")
+    elif total and sum((decimal_money(entry["amount"]) for entry in entries), Decimal(0)) != decimal_money(total):
+        issues.append("Ödeme dağılımı belge toplamıyla uyuşmuyor.")
+    if not is_z and any(entry["method"] == "pos" for entry in entries):
         issues.append("Kartın banka kartı mı kredi kartı mı olduğu okunamadı.")
     nonzero = [entry for entry in entries if decimal_money(entry["amount"]) > 0]
     method = nonzero[0]["method"] if len(nonzero) == 1 else "mixed" if nonzero else "unknown"
     aggregates = {}
-    for key, methods in {"cash_amount": {"cash"}, "card_amount": {"card", "debit_card", "pos"}, "bank_amount": {"bank_transfer"}, "meal_card_amount": {"meal_card"}, "other_payment": {"other"}}.items():
+    for key, methods in {"cash_amount": {"cash"}, "card_amount": {"card", "debit_card", "pos"},
+                         "bank_amount": {"bank_transfer"}, "meal_card_amount": {"meal_card"}, "other_payment": {"other"}}.items():
         values = [decimal_money(entry["amount"]) for entry in entries if entry["method"] in methods]
         aggregates[key] = str(sum(values, Decimal(0))) if values else ""
     return {"payment_entries": entries, "payment_method": method, "bank_evidence": evidence, **aggregates}, issues

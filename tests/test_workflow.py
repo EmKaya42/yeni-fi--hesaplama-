@@ -17,7 +17,7 @@ os.environ["DATA_DIR"] = tempfile.mkdtemp(prefix="receipt-test-import-")
 import app as server
 from services.accounting import PROGRAMS, STANDARD_ACCOUNTS, default_profile, export_workbook, journal_rows, read_template, validate_profile
 from services.document_extraction import decimal_money, extract_document
-from services.document_ocr import read_document
+from services.document_ocr import read_tesseract_document as read_document
 from services.queue_worker import process_next
 from services.storage import database, document_dict, initialize
 

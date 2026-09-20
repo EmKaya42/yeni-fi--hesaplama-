@@ -3,6 +3,8 @@ openpyxl>=3.1.5,<4
 xlrd==2.0.2
 Pillow>=11,<13
 pytesseract>=0.3.13,<0.4
+rapidocr==3.9.2
+onnxruntime==1.30.0
 pypdfium2>=4.30,<6
 PyJWT[crypto]>=2.10,<3
 gunicorn>=23,<24

@@ -5,7 +5,7 @@ const date = value => value ? new Intl.DateTimeFormat('tr-TR',{dateStyle:'medium
 const statusLabels = {success:['✓','Kontrolleri geçti'],review:['!','İnceleme gerekli'],failed:['!','Okunamadı'],queued:['◷','Sırada'],processing:['◌','Okunuyor'],duplicate:['↳','Mükerrer'],mapping:['!','Hesap eşleşmesi gerekli']};
 const badge = status => `<span class="badge badge-${escape(status)}">${(statusLabels[status] || ['','Bilinmiyor']).map(escape).join(' ')}</span>`;
 let kind = 'receipts', offset = 0, settings, draft, authUser, auth, authApi, pollTimer, toastTimer;
-let refreshing = false, uploading = false, uploadItems = [], uploadSequence = 0, refreshVersion = 0, previewUrl;
+let refreshing = false, uploading = false, uploadItems = [], uploadSequence = 0, refreshVersion = 0, previewUrl, detailVersion = 0;
 let registerMode = false, signedIn = false, chartImportMode = 'new';
 const scopeValues = () => ({program:settings?.selected?.program || '', chart_id:settings?.selected?.chart_id || '', period:$('#period-filter').value});
 const localAuth = document.body.dataset.localAuth === 'true';
@@ -80,6 +80,12 @@ async function begin() {
 function schedulePoll() {
   pollTimer = setTimeout(async () => { if (!signedIn) return; await refresh(); schedulePoll(); }, 2500);
 }
+let renderedDocumentRows = null;
+function setDocumentRows(html) {
+  if (html === renderedDocumentRows) return;
+  $('#document-table').innerHTML = html;
+  renderedDocumentRows = html;
+}
 async function refresh() {
   if (refreshing || !signedIn) return;
   refreshing = true;
@@ -106,11 +112,12 @@ async function refresh() {
     $('#export-button').title = pending ? 'Okuma kuyruğu tamamlandıktan sonra indirebilirsiniz.' : c.mapping ? 'Hesap eşleşmesi gereken belgeleri inceleyin.' : `${c.success || 0} belge Excel’e alınacak.`;
     $('#empty-state').hidden = data.items.length > 0;
     $('#empty-state h3').textContent = data.total === 0 && ($('#search').value || $('#status-filter').value) ? 'Aramanızla eşleşen belge yok' : 'İlk belgenizi ekleyin';
-    $('#document-table').innerHTML = data.items.map(row => {
+    const tableHtml = data.items.map(row => {
       const result = row.result;
       const warning = row.error || result.issues?.[0] || '';
-      return `<tr><td><div class="file-name"><span class="file-icon">▤</span><div><b title="${escape(row.filename)}">${escape(row.filename)}</b><small>${escape(result.document_no || 'Belge no bekleniyor')}${row.filename.toLowerCase().endsWith('.pdf') ? ` · Sayfa ${row.page + 1}` : ''} · ${row.direction === 'income' ? 'Gelir' : 'Gider'}</small></div></div></td><td><b>${escape(result.seller_name || '—')}</b>${row.kind === 'receipts' ? `<small class="product-summary" title="${escape(result.product_name || '')}">${escape(result.product_name || 'Ürün adı bekleniyor')}</small>` : ''}<small>${escape(date(result.document_datetime))}</small></td><td>${escape(money(result.vat_amount))}<small>${escape(result.vat_breakdown?.map(v => `%${v.rate}`).join(' / ') || '')}</small></td><td><b>${escape(money(result.total_amount))}</b></td><td title="${escape(warning)}">${badge(row.status)}<small>${row.attempts ? `${row.attempts}. deneme` : 'Okuma bekliyor'}${row.auto_retries ? ' · otomatik yeniden denendi' : ''}</small>${row.export_count ? `<small>Excel hazırlandı (${row.export_count})</small>` : ''}</td><td><div class="row-actions"><button data-detail="${row.id}">İncele</button>${['review','failed','mapping'].includes(row.status) ? `<button class="retry" data-retry="${row.id}">↻ Yeniden dene</button>` : ''}</div></td></tr>`;
+      return `<tr><td><div class="file-name"><span class="file-icon">▤</span><div><b title="${escape(row.filename)}">${escape(row.filename)}</b><small>${escape(result.document_no || 'Belge no bekleniyor')}${row.filename.toLowerCase().endsWith('.pdf') ? ` · Sayfa ${row.page + 1}` : ''} · ${row.direction === 'income' ? 'Gelir' : 'Gider'}</small></div></div></td><td><b>${escape(result.seller_name || '—')}</b>${row.kind === 'receipts' ? `<small class="product-summary" title="${escape(result.product_name || '')}">${escape(result.product_name || 'Ürün adı bekleniyor')}</small>` : ''}<small>${escape(date(result.document_datetime))}</small></td><td>${escape(money(result.vat_amount))}<small>${escape(result.vat_breakdown?.map(v => `%${v.rate}`).join(' / ') || '')}</small></td><td><b>${escape(money(result.total_amount))}</b></td><td title="${escape(warning)}">${badge(row.status)}${warning ? `<small class="document-warning">${escape(warning)}</small>` : ''}<small>${row.attempts ? `${row.attempts}. deneme` : 'Okuma bekliyor'}${row.auto_retries ? ' · otomatik yeniden denendi' : ''}</small>${row.export_count ? `<small>Excel hazırlandı (${row.export_count})</small>` : ''}</td><td><div class="row-actions"><button data-detail="${row.id}">İncele</button>${['review','failed','mapping'].includes(row.status) ? `<button class="retry" data-retry="${row.id}">↻ Yeniden dene</button>` : ''}</div></td></tr>`;
     }).join('');
+    setDocumentRows(tableHtml);
     $('#pagination-label').textContent = data.total ? `${offset + 1}–${Math.min(offset + 50, data.total)} / ${data.total} belge` : '0 belge';
     $('#previous-page').disabled = offset === 0;
     $('#next-page').disabled = offset + 50 >= data.total;
@@ -139,7 +146,7 @@ document.querySelectorAll('[data-kind]').forEach(button => button.addEventListen
   $('#upload-title').textContent = isZ ? 'Z raporlarınızı buraya bırakın' : 'Fişlerinizi buraya bırakın';
   $('#direction-label').hidden = isZ;
   $('#export-button').disabled = true;
-  $('#document-table').innerHTML = '';
+  setDocumentRows('');
   if (settings) renderSelected();
   await refresh(); await loadLegacy();
 }));
@@ -204,12 +211,23 @@ async function retryDocument(id, button) {
   try { await jsonApi(`/api/documents/${id}/retry`, {method:'POST'}); toast('Belge yeniden okuma sırasına alındı.'); await refresh(); }
   catch (error) { toast(error.message); button.disabled = false; }
 }
+function readingNotice(doc) {
+  const data = doc.result || {}, issues = [doc.error, ...(data.issues || [])].filter(Boolean);
+  if (!issues.length) return '';
+  const partial = doc.status === 'review' && data.raw_text;
+  const guidance = partial && !data.seller_name
+    ? 'Firma unvanı dahil belgenin üst kısmının tamamını gösteren fotoğrafı yükleyin. Aynı kesilmiş fotoğrafı yeniden denemek eksik kısmı tamamlamaz.'
+    : 'İşaretlenen alanları kaynak belgeyle karşılaştırın; daha net bir fotoğrafı dosya ekle alanından yükleyebilirsiniz.';
+  return `<div class="detail-issues reading-notice"><b>${partial ? 'Belge kısmen okundu' : 'Belgeyi kontrol edin'}</b>${partial ? '<p>Okunan bilgiler aşağıda görünüyor. Eksik veya çelişen alanlar nedeniyle bu belge Excel’e aktarılmıyor.</p>' : ''}<ul>${issues.map(issue => `<li>${escape(issue)}</li>`).join('')}</ul><p>${guidance}</p></div>`;
+}
 async function showDetail(id) {
+  const version = ++detailVersion;
   try {
     const doc = await jsonApi(`/api/documents/${id}`), data = doc.result;
-    const switchBtn = `<button id="detail-switch-kind" class="button secondary" title="Belge türünü ${doc.kind === 'receipts' ? 'Z Raporu' : 'Fiş'} olarak değiştir">⇄ ${doc.kind === 'receipts' ? 'Z Raporuna Taşı' : 'Fişe Taşı'}</button>`;
+    if (version !== detailVersion) return;
+    const switchBtn = ['queued', 'processing'].includes(doc.status) ? '' : `<button id="detail-switch-kind" class="button secondary" title="Belge türünü ${doc.kind === 'receipts' ? 'Z Raporu' : 'Fiş'} olarak değiştir">⇄ ${doc.kind === 'receipts' ? 'Z Raporuna Taşı' : 'Fişe Taşı'}</button>`;
     $('#detail-title').textContent = doc.filename;
-    $('#detail-body').innerHTML = `<div class="detail-grid"><div><div class="source-preview" id="source-preview">Kaynak belge yükleniyor…</div><a id="source-download" class="source-link" hidden>Kaynak dosyayı indir ↗</a></div><div>${badge(doc.status)}<div class="detail-values">${fiscalDetail(doc)}</div>${data.vat_breakdown?.length ? `<table><thead><tr><th>Oran</th><th>Matrah</th><th>KDV</th></tr></thead><tbody>${data.vat_breakdown.map(part => `<tr><td>%${escape(part.rate)}</td><td>${escape(money(part.base))}</td><td>${escape(money(part.tax))}</td></tr>`).join('')}</tbody></table>` : ''}${accountingDetail(doc)}${doc.error || data.issues?.length ? `<div class="detail-issues"><ul>${[doc.error,...(data.issues || [])].filter(Boolean).map(issue => `<li>${escape(issue)}</li>`).join('')}</ul><p>Daha net bir fotoğrafı dosya ekle alanından yükleyebilirsiniz.</p></div>` : ''}${doc.status === 'duplicate' ? '<p class="detail-issues">Aynı vergi kimliği, belge numarası, tarih ve tutarla bir kayıt zaten var. Bu kopya Excel’e eklenmez.</p>' : ''}${(data.notes || []).map(note => `<p class="muted">${escape(note)}</p>`).join('')}<details><summary>Okunan kaynak metin</summary><pre class="raw-text">${escape(data.raw_text || 'Henüz metin okunmadı.')}</pre></details><div style="display:flex;gap:8px;margin-top:12px;">${['review','failed','mapping'].includes(doc.status) ? '<button id="detail-retry" class="button secondary">↻ Yeniden dene</button>' : ''}${switchBtn}</div></div></div>`;
+    $('#detail-body').innerHTML = `<div class="detail-grid"><div><div class="source-preview" id="source-preview">Kaynak belge yükleniyor…</div><a id="source-download" class="source-link" hidden>Kaynak dosyayı indir ↗</a></div><div>${badge(doc.status)}${readingNotice(doc)}<div class="detail-values">${fiscalDetail(doc)}</div>${data.vat_breakdown?.length ? `<table><thead><tr><th>Oran</th><th>Matrah</th><th>KDV</th></tr></thead><tbody>${data.vat_breakdown.map(part => `<tr><td>%${escape(part.rate)}</td><td>${escape(money(part.base))}</td><td>${escape(money(part.tax))}</td></tr>`).join('')}</tbody></table>` : ''}${accountingDetail(doc)}${doc.status === 'duplicate' ? '<p class="detail-issues">Aynı vergi kimliği, belge numarası, tarih ve tutarla bir kayıt zaten var. Bu kopya Excel’e eklenmez.</p>' : ''}${(data.notes || []).map(note => `<p class="muted">${escape(note)}</p>`).join('')}<details><summary>Okunan kaynak metin</summary><pre class="raw-text">${escape(data.raw_text || 'Henüz metin okunmadı.')}</pre></details><div style="display:flex;gap:8px;margin-top:12px;">${['review','failed','mapping'].includes(doc.status) ? '<button id="detail-retry" class="button secondary">↻ Yeniden dene</button>' : ''}${switchBtn}</div></div></div>`;
     if (!$('#detail-dialog').open) $('#detail-dialog').showModal();
     $('#detail-retry')?.addEventListener('click', async event => { await retryDocument(id, event.target); $('#detail-dialog').close(); });
     $('#detail-switch-kind')?.addEventListener('click', async event => {
@@ -225,20 +243,23 @@ async function showDetail(id) {
     previewUrl = null;
     const source = await api(`/api/documents/${id}/source`);
     const blob = await source.blob();
-    if (!$('#detail-dialog').open) return;
+    if (!$('#detail-dialog').open || version !== detailVersion) return;
     previewUrl = URL.createObjectURL(blob);
     $('#source-preview').innerHTML = doc.filename.toLowerCase().endsWith('.pdf') ? `<iframe src="${previewUrl}#page=${doc.page + 1}" title="Kaynak PDF belgesi"></iframe>` : `<img src="${previewUrl}" alt="Kaynak belge">`;
     $('#source-download').href = previewUrl; $('#source-download').download = doc.filename; $('#source-download').hidden = false;
-  } catch (error) { if ($('#source-preview')) $('#source-preview').textContent = error.message; toast(error.message); }
+  } catch (error) { if (version !== detailVersion) return; if ($('#source-preview')) $('#source-preview').textContent = error.message; toast(error.message); }
 }
+$('#detail-dialog').addEventListener('close', () => { detailVersion++; if (previewUrl) URL.revokeObjectURL(previewUrl); previewUrl = null; });
 function fiscalDetail(doc) {
   const data = doc.result, isZ = doc.kind === 'z-reports';
   const values = [[isZ ? 'Z raporu numarası' : 'Fiş / belge numarası', data.document_no],
     ['İşletme adı / unvanı', data.seller_name], ['Vergi dairesi', data.tax_office], ['VKN / TCKN', data.tax_id],
+    ...(data.field_sources?.seller_name ? [['Firma adı kaynağı', `Aynı VKN / TCKN ile otomatik tamamlandı: ${data.field_sources.seller_name.filename}`]] : []),
     ['Tarih', data.document_datetime ? date(data.document_datetime) : ''], ['Saat', data.document_time],
     ...(isZ ? [['Mali sicil numarası', data.fiscal_id], ['Cihaz numarası', data.device_no], ['Fiş / işlem adedi', data.transaction_count],
       ['Kümülatif satış', money(data.cumulative_sales)], ['Kümülatif KDV', money(data.cumulative_vat)]] : [['Ürünler / açıklama', data.product_name]]),
-    ['Genel toplam', money(data.total_amount)], ['Toplam KDV', money(data.vat_amount)]];
+    ['Genel toplam', money(data.total_amount)], ['Toplam KDV', money(data.vat_amount)],
+    ['Okuma motoru', data.engine]];
   return values.map(([label,value]) => `<div><span>${escape(label)}</span><b>${escape(value === '' || value == null ? 'Belgede belirtilmemiş / okunamadı' : value)}</b></div>`).join('');
 }
 function lineDetails(doc) {
@@ -259,7 +280,6 @@ function accountingDetail(doc) {
   const journal = doc.accounting?.rows ? `<h3>Otomatik muhasebe fişi</h3><p class="muted">${doc.accounting.status === 'matched' ? 'Firma hesap planıyla eşleştirildi.' : 'Standart ana hesaplarla hazırlandı.'}</p><table><thead><tr><th>Hesap</th><th>Borç</th><th>Alacak</th></tr></thead><tbody>${doc.accounting.rows.map(row => `<tr><td><b>${escape(row.account)}</b><small>${escape(row.name)}</small></td><td>${escape(money(row.debit))}</td><td>${escape(money(row.credit))}</td></tr>`).join('')}</tbody></table>` : '';
   return lineDetails(doc) + paymentTable + bankText + journal + (doc.status === 'mapping' ? '<p class="notice">Hesap planını program ayarlarından güncellediğinizde eşleşmeler otomatik yeniden hesaplanır.</p>' : '');
 }
-$('#detail-dialog').addEventListener('close', () => { if (previewUrl) URL.revokeObjectURL(previewUrl); previewUrl = null; });
 document.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', () => $(`#${button.dataset.close}`).close()));
 $('#previous-page').addEventListener('click', () => { offset = Math.max(0, offset - 50); refreshVersion++; void refresh(); });
 $('#next-page').addEventListener('click', () => { offset += 50; refreshVersion++; void refresh(); });

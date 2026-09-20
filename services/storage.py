@@ -53,7 +53,7 @@ def initialize(path: Path):
             CREATE UNIQUE INDEX IF NOT EXISTS documents_fingerprint ON documents(user_id, kind, fingerprint) WHERE fingerprint IS NOT NULL;
         """)
         columns = {row[1] for row in db.execute("PRAGMA table_info(documents)")}
-        for name, definition in {"chart_id": "TEXT NOT NULL DEFAULT ''", "retry_after": "REAL NOT NULL DEFAULT 0", "auto_retries": "INTEGER NOT NULL DEFAULT 0", "export_count": "INTEGER NOT NULL DEFAULT 0", "exported_at": "REAL"}.items():
+        for name, definition in {"chart_id": "TEXT NOT NULL DEFAULT ''", "retry_after": "REAL NOT NULL DEFAULT 0", "auto_retries": "INTEGER NOT NULL DEFAULT 0", "export_count": "INTEGER NOT NULL DEFAULT 0", "exported_at": "REAL", "reprocess_version": "INTEGER NOT NULL DEFAULT 0"}.items():
             if name not in columns:
                 db.execute(f"ALTER TABLE documents ADD COLUMN {name} {definition}")
         db.execute("CREATE INDEX IF NOT EXISTS documents_chart ON documents(user_id, chart_id, kind)")
@@ -67,9 +67,10 @@ def initialize(path: Path):
         # results. Preserve files, previous values and export history.
         db.execute("""UPDATE documents SET status='queued', fingerprint=NULL, duplicate_of=NULL,
                       retry_after=0, auto_retries=0, started_at=NULL,
-                      error='Yeni belge alanları kaynak dosyadan otomatik okunacak.'
-                      WHERE status IN ('success','duplicate')
-                      AND COALESCE(json_extract(result, '$.extraction_version'), 0) BETWEEN 2 AND 3""")
+                      reprocess_version=6,
+                      error='Yeni OCR motoruyla kaynak dosya yeniden okunacak.'
+                      WHERE status IN ('success','duplicate','review','failed') AND reprocess_version < 6
+                      AND COALESCE(json_extract(result, '$.extraction_version'), 0) BETWEEN 2 AND 5""")
 
 
 def document_dict(row, detail=False):
@@ -84,4 +85,6 @@ def document_dict(row, detail=False):
         doc["result"]["product_name"] = ""
     if not detail:
         doc["result"].pop("raw_text", None)
+        doc["result"].pop("normalized_text", None)
+        doc["result"].pop("ocr_reads", None)
     return doc
