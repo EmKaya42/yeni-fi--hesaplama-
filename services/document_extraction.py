@@ -121,7 +121,7 @@ def extract_receipt_items(original: list[str], total: str, issues: list[str], di
     pending = []
     pending_quantity = None
     started = False
-    metadata = r"\b(?:VKN|TCKN|VERGI|TARIH|SAAT|MALI\s*SICIL|CIHAZ|MF\s*:|FIS\s*(?:NO|NUMARASI)|FATURA\s*(?:NO|NUMARASI)|BELGE\s*(?:NO|NUMARASI|SERI)|SERI\s*(?:NO|:))\b|^B\.?\s*SERI\b|\bV\.?D\.?\s*[: ]"
+    metadata = r"\b(?:VKN|TCKN|VERGI|TARIH|SAAT|MALI\s*SICIL|CIHAZ|MF\s*:|FIS\s*(?:NO|NUMARASI)|FATURA\s*(?:NO|NUMARASI)|BELGE\s*(?:NO|NUMARASI|SERI)|SIRA\s*(?:NO|NUMARASI)|SERI\s*(?:NO|:))\b|^B\.?\s*SERI\b|\bV\.?D\.?\s*[: ]"
     excluded = r"^(?:KDV\b|%\s*\d+\s+(?:MATRAH|KDV|TUTAR)|MATRAH\b|(?:ADET\s+)?URUN\s+ADI\b|MAL\s+CINSI\b|ACIKLAMA\b|MIKTAR\b)"
     footer = r"^(?:TOP\s*KDV|TOPLAM|GENEL\s+TOPLAM|ARA\s*TOPLAM|ODENECEK|TOTAL|NAKIT|KREDI\b|BANKA\b|POS\b|ISLEM\s*(?:NO|ONAY)|ONAY\s*KOD|DIGER\s*ODEME|PARA\s*USTU|MALI\s*DEGERI|TES[E]*KKUR)"
     address = r"\b(?:MAH(?:ALLE(?:SI)?)?\.?|CAD(?:DE(?:SI)?)?\.?|SOK(?:AK)?\.?|ADRES|TEL(?:EFON)?|MERSIS|SUBE)\b|\bNO\s*:"
@@ -361,7 +361,12 @@ def extract_document(text: str, kind: str) -> dict[str, Any]:
         issues.append("Belgedeki vergi kimliği alanları çelişiyor.")
     if not tax_id and len(header_ids) == 1:
         tax_id = next(iter(header_ids))
-    doc_no = identifier(r"\b(?:Z\s*(?:RAPORU?)?(?:\s*(?:NO|NUMARASI))?|RAPOR\s*(?:NO|NUMARASI)|Z\s*NO)\s*[:#=-]?\s*(\d{1,12})\b" if is_z else r"\b(?:FIS\s*(?:NO|NUMARASI)|FATURA\s*(?:NO|NUMARASI)|BELGE\s+(?:NO|NUMARASI))\s*[:#=-]?\s*([A-Z0-9][A-Z0-9/-]{0,29})\b")
+    doc_no = identifier(r"\b(?:Z\s*(?:RAPORU?)?(?:\s*(?:NO|NUMARASI))?|RAPOR\s*(?:NO|NUMARASI)|Z\s*NO)\s*[:#=-]?\s*(\d{1,12})\b" if is_z else r"\b(?:FIS\s*(?:NO|NUMARASI)|FATURA\s*(?:NO|NUMARASI)|BELGE\s+(?:NO|NUMARASI))\s*[\"'”]?\s*[:#=-]?\s*([A-Z0-9][A-Z0-9/-]{0,29})\b")
+    # Some cash registers call the receipt identifier SIRA NO.  Prefer the
+    # fiscal/document labels above when both are printed, because a separate
+    # customer or transaction sequence may also appear on the receipt.
+    if not is_z and not doc_no:
+        doc_no = identifier(r"\bSIRA\s*(?:NO|NUMARASI)\s*[\"'”]?\s*[:#=-]?\s*([A-Z0-9][A-Z0-9/-]{0,29})\b")
     if is_z and not doc_no:
         z_bottom = re.search(r"\bZ\s*NO\s*[:#=-]?\s*(\d{1,12})\b", plain)
         if z_bottom:

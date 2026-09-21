@@ -45,6 +45,24 @@ def test_spaced_vkn_tabular_prices_and_single_tender_total_are_verified():
         {'method': 'card', 'amount': '2600.00', 'bank_code': '', 'bank_role': 'acquirer'}]
 
 
+@pytest.mark.parametrize('label', ['FİŞ NO', 'FİŞ NUMARASI', 'BELGE NO', 'BELGE NUMARASI', 'SIRA NO', 'SIRA NUMARASI'])
+def test_receipt_document_number_labels(label):
+    data = extract_document(ADIM_RECEIPT.replace('FIS NO: 14739', f'{label}: 14739'), 'receipts')
+    assert data['document_no'] == '14739'
+    assert not any('Belge numarası' in issue for issue in data['issues'])
+
+
+def test_fiscal_receipt_number_takes_priority_over_other_sequence_number():
+    data = extract_document(ADIM_RECEIPT.replace('FIS NO: 14739', 'FIS NO: 14739\nSIRA NO: 88'), 'receipts')
+    assert data['document_no'] == '14739'
+    assert not any('birden fazla numara' in issue for issue in data['issues'])
+
+
+def test_quote_after_receipt_number_label_is_tolerated():
+    data = extract_document(ADIM_RECEIPT.replace('FIS NO: 14739', 'FIS NO": 14739'), 'receipts')
+    assert data['document_no'] == '14739'
+
+
 def test_two_tabular_amounts_are_not_accepted_when_arithmetic_disagrees():
     data = extract_document(ADIM_RECEIPT.replace('2450.00 TL 2450.00 TL', '2450.00 TL 2400.00 TL'), 'receipts')
     assert any('birden fazla tutar' in issue for issue in data['issues'])
