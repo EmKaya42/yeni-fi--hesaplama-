@@ -169,9 +169,12 @@ def extract_details(original, kind, total, issues, notes):
     if cumulative["sales"] and total and decimal_money(cumulative["sales"]) < decimal_money(total):
         issues.append("Kümülatif satış, günlük satış toplamından küçük.")
 
-    for label, value in (("Vergi dairesi", tax_office), ("Saat", document_time)):
-        if not value:
-            issues.append(f"{label} okunamadı.")
+    if not document_time:
+        issues.append("Saat okunamadı.")
+    # Many valid retail receipts print the VKN but no tax-office name.  Keep
+    # the absent office blank.  Z reports retain the stricter fiscal check.
+    if is_z and not tax_office:
+        issues.append("Vergi dairesi okunamadı.")
     if is_z:
         if not fiscal_id and not device_no:
             issues.append("Cihaz / mali sicil numarası okunamadı.")

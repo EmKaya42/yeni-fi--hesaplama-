@@ -12,6 +12,51 @@ from services.queue_worker import process_next
 from services.storage import database, initialize
 
 
+ADIM_RECEIPT = """ADIM SPOR AYAKKABI
+ISTIKLAL CAD. NO: 112 BEYOGLU/ISTANBUL AYAKKABI & GIYIM VE TIC. LTD. STI.
+VERGI NO: 123 456 7890
+FIS NO: 14739 TARIH:20.09.2026
+SAAT:16:34 KASA: 02
+MÜSTERI: NÜSHASI
+ADET ÜRÜN ADI B.FIYAT TUTAR
+1 **ERKEK SPOR AYAKKABI**2450.00 TL 2450.00 TL
+SPOR ÇORAP (3'LU) 150.00 TL 150.00 TL
+ARA TOPLAM: 2600.00 TL
+KDV DAHIL (%20): 433.33 TL
+**TOPLAM: 2600.00 TL**
+ÖDEME TÜRÜ: KREDI KARTI
+KART TIPI: VISA (**** 1234)
+ONAY KODU: 005643"""
+
+
+def test_spaced_vkn_tabular_prices_and_single_tender_total_are_verified():
+    data = extract_document(ADIM_RECEIPT, 'receipts')
+    assert not data['issues'], data['issues']
+    assert data['tax_id'] == '1234567890'
+    assert data['document_no'] == '14739'
+    assert data['tax_office'] == ''
+    assert data['items'] == [
+        {'name': 'ERKEK SPOR AYAKKABI', 'amount': '2450.00', 'rate': 20,
+         'quantity': '1', 'unit': 'adet', 'unit_price': '2450.00'},
+        {'name': "SPOR ÇORAP (3'LU)", 'amount': '150.00', 'rate': 20,
+         'quantity': '1', 'unit': 'adet', 'unit_price': '150.00'},
+    ]
+    assert data['payment_entries'] == [
+        {'method': 'card', 'amount': '2600.00', 'bank_code': '', 'bank_role': 'acquirer'}]
+
+
+def test_two_tabular_amounts_are_not_accepted_when_arithmetic_disagrees():
+    data = extract_document(ADIM_RECEIPT.replace('2450.00 TL 2450.00 TL', '2450.00 TL 2400.00 TL'), 'receipts')
+    assert any('birden fazla tutar' in issue for issue in data['issues'])
+
+
+def test_total_is_not_assigned_when_more_than_one_tender_is_named_without_amounts():
+    text = ADIM_RECEIPT.replace('ÖDEME TÜRÜ: KREDI KARTI', 'ÖDEME TÜRÜ: KREDI KARTI\nNAKIT')
+    data = extract_document(text, 'receipts')
+    assert not data['payment_entries']
+    assert any('Ödeme' in issue for issue in data['issues'])
+
+
 @pytest.mark.parametrize('text', [
     'iakiv 0/i851/026', 'SAi 0181202', 'Fdv 20 99,12', 'TOPLAM 550,00',
     'SATIS TOPLAM 550,00', 'Fll Bellef oplaai 861 118,88',

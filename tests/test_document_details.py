@@ -60,7 +60,7 @@ def test_office_glyph_repair_does_not_guess_from_address_or_repair_tax_id():
     assert extract_document(text, 'receipts')['tax_id'] == ''
 
 
-@pytest.mark.parametrize("source,part,label", [(RECEIPT, "VERGİ DAİRESİ: Kadıköy\n", "Vergi dairesi"), (RECEIPT, " SAAT: 14:25:36", "Saat"),
+@pytest.mark.parametrize("source,part,label", [(RECEIPT, " SAAT: 14:25:36", "Saat"),
                                               (Z_REPORT, "MALİ SİCİL NO: AB00000123\n", "sicil"), (Z_REPORT, "FİŞ ADEDİ: 2\n", "adedi")])
 def test_missing_required_details_block_tick_and_export(source, part, label):
     document = doc(source.replace(part, ""), "z-reports" if source == Z_REPORT else "receipts")
@@ -69,6 +69,13 @@ def test_missing_required_details_block_tick_and_export(source, part, label):
         export_workbook([document], profile())
     if label == "Saat":
         assert document["result"]["document_datetime"] == "2026-09-13"
+
+
+def test_receipt_without_printed_tax_office_can_export():
+    document = doc(RECEIPT.replace("VERGİ DAİRESİ: Kadıköy\n", ""), "receipts")
+    assert document["result"]["tax_office"] == ""
+    assert not document["result"]["issues"]
+    assert journal_rows([document], profile())
 
 
 @pytest.mark.parametrize("extra", ["\nSAAT: 14:25:37", "\nVERGİ DAİRESİ: Üsküdar"])
@@ -107,7 +114,10 @@ def test_absent_optional_quantity_is_not_fabricated_and_rate_is_not_quantity():
 
 def test_wrong_multiplication_and_missing_item_vat_are_reviewed():
     assert doc(RECEIPT.replace("DEFTER %20", "DEFTER 2 X 70,00 %20"))["result"]["issues"]
-    assert doc(RECEIPT.replace("DEFTER %20", "DEFTER"))["result"]["issues"]
+    inferred = doc(RECEIPT.replace("DEFTER %20", "DEFTER"))["result"]
+    assert not inferred["issues"]
+    assert inferred["items"][0]["rate"] == 20
+    assert any("tek oranlı KDV" in note for note in inferred["notes"])
     assert doc(RECEIPT.replace("DEFTER %20", "DEFTER 2 X 60,0000 %20"))["result"]["issues"]
 
 

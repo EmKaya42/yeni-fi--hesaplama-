@@ -184,7 +184,7 @@ def journal_rows(documents, profile):
             raise ValueError("Güncel okuma kontrolleri için kaynak dosya yeniden okunmalı.")
         if not data.get('seller_name') or data.get('field_sources', {}).get('seller_name'):
             raise ValueError('Firma adı kaynak belgeden doğrulanmalı; başka belgeden tamamlanan unvan aktarılamaz.')
-        if not data.get("tax_office") or not data.get("document_time") or (is_z and (not (data.get("fiscal_id") or data.get("device_no")) or data.get("transaction_count") is None)):
+        if not data.get("document_time") or (is_z and (not data.get("tax_office") or not (data.get("fiscal_id") or data.get("device_no")) or data.get("transaction_count") is None)):
             raise ValueError("Zorunlu belge bilgileri eksik; kaynak dosya yeniden okunmalı.")
         if document.get("chart_id", "") != profile.get("chart_id", ""):
             raise ValueError("Belge farklı firma hesap planına ait.")

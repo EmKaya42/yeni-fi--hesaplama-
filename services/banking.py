@@ -150,6 +150,21 @@ def extract_payments(text, total, kind):
     sections = list(z_sections(lines)) if is_z else [("general", line) for line in lines]
     groups = {"main": [], "documents": []}
     missing = {"main": [], "documents": []}
+
+    def method_for_label(label):
+        if re.fullmatch(r"YEMEKKARTI|PLUXEE|SODEXO|MULTINET|EDENRED|SETCARD|METROPOLKART|TICKET(?:RESTAURANT)?", label):
+            return "meal_card"
+        if label == "NAKIT":
+            return "cash"
+        if label in {"BANKAKARTI", "DEBIT"}:
+            return "debit_card"
+        if label.startswith("BANKA/") or label in {"POS", "KARTODEME", "KARTLAODEME"}:
+            return "pos"
+        if label in {"KREDIKARTI", "CREDIT", "KREDI"}:
+            return "card"
+        if label in {"HAVALE", "EFT", "FAST"}:
+            return "bank_transfer"
+        return "other"
     slip_type_pattern = (r'(?:T?ROY|VISA|MASTER(?:CARD)?|AMEX)\s*/\s*'
                          r'(K(?:R|I|/)ED[I1]|CREDIT|DEBIT|BANKA)\s*/\s*(?:ONUS|OFFUS)')
     for index, (section, line) in enumerate(sections):
@@ -195,20 +210,7 @@ def extract_payments(text, total, kind):
         if len(values) != 1:
             issues.append("Ödeme satırında birden fazla tutar var; sütunlar incelenmeli.")
         meal = re.fullmatch(r"YEMEKKARTI|PLUXEE|SODEXO|MULTINET|EDENRED|SETCARD|METROPOLKART|TICKET(?:RESTAURANT)?", label)
-        if meal:
-            method = "meal_card"
-        elif label == "NAKIT":
-            method = "cash"
-        elif label in {"BANKAKARTI", "DEBIT"}:
-            method = "debit_card"
-        elif label.startswith("BANKA/") or label in {"POS", "KARTODEME", "KARTLAODEME"}:
-            method = "pos"
-        elif label in {"KREDIKARTI", "CREDIT", "KREDI"}:
-            method = "card"
-        elif label in {"HAVALE", "EFT", "FAST"}:
-            method = "bank_transfer"
-        else:
-            method = "other"
+        method = method_for_label(label)
         amount = decimal_money(values[-1])
         if re.search(r"-\s*[*₺]?\s*" + re.escape(values[-1]), amount_line):
             issues.append("Negatif ödeme satırı incelenmeli.")
@@ -241,6 +243,17 @@ def extract_payments(text, total, kind):
         reconcile_detail(entries)
     entries = groups["main"] or groups["documents"]
     selected_group = "main" if groups["main"] else "documents"
+    # A retail receipt may state only "ÖDEME TÜRÜ: KREDİ KARTI" and print
+    # the payable total elsewhere.  With exactly one explicit tender, that
+    # document total is the tender amount; no split is being guessed.
+    if not entries and not is_z and total:
+        labels = list(dict.fromkeys(missing["main"]))
+        methods = {method_for_label(label) for label in labels}
+        if len(methods) == 1 and labels:
+            method = methods.pop()
+            entries.append({"method": method, "amount": str(decimal_money(total)), "bank_code": "",
+                            "bank_role": "acquirer" if method in {"card", "debit_card", "pos"} else "unspecified"})
+            missing["main"] = []
     if groups["main"] and groups["documents"]:
         def totals_by_method(values):
             totals = {}

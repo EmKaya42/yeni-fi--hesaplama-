@@ -122,7 +122,7 @@ def extract_receipt_items(original: list[str], total: str, issues: list[str], di
     pending_quantity = None
     started = False
     metadata = r"\b(?:VKN|TCKN|VERGI|TARIH|SAAT|MALI\s*SICIL|CIHAZ|MF\s*:|FIS\s*(?:NO|NUMARASI)|FATURA\s*(?:NO|NUMARASI)|BELGE\s*(?:NO|NUMARASI|SERI)|SERI\s*(?:NO|:))\b|^B\.?\s*SERI\b|\bV\.?D\.?\s*[: ]"
-    excluded = r"^(?:KDV\b|%\s*\d+\s+(?:MATRAH|KDV|TUTAR)|MATRAH\b|URUN\s+ADI\b|MAL\s+CINSI\b|ACIKLAMA\b|MIKTAR\b)"
+    excluded = r"^(?:KDV\b|%\s*\d+\s+(?:MATRAH|KDV|TUTAR)|MATRAH\b|(?:ADET\s+)?URUN\s+ADI\b|MAL\s+CINSI\b|ACIKLAMA\b|MIKTAR\b)"
     footer = r"^(?:TOP\s*KDV|TOPLAM|GENEL\s+TOPLAM|ARA\s*TOPLAM|ODENECEK|TOTAL|NAKIT|KREDI\b|BANKA\b|POS\b|ISLEM\s*(?:NO|ONAY)|ONAY\s*KOD|DIGER\s*ODEME|PARA\s*USTU|MALI\s*DEGERI|TES[E]*KKUR)"
     address = r"\b(?:MAH(?:ALLE(?:SI)?)?\.?|CAD(?:DE(?:SI)?)?\.?|SOK(?:AK)?\.?|ADRES|TEL(?:EFON)?|MERSIS|SUBE)\b|\bNO\s*:"
     quantity_pattern = rf"(?P<quantity>\d+(?:[.,]\d{{1,6}})?)\s*(?P<unit>ADET|AD|KG|GR|LT|L)?\s*[X×*]\s*(?P<unit_price>{MONEY})"
@@ -140,7 +140,7 @@ def extract_receipt_items(original: list[str], total: str, issues: list[str], di
 
     for index, line in enumerate(original):
         normalized = folded(line)
-        if re.search(metadata, normalized) or re.match(r"^MF\b|^(?:B\.?\s*|BELGE\s*)?SERI(?:SI)?(?:\s*NO)?\s*[:#=-]", normalized):
+        if re.search(metadata, normalized) or re.match(r"^MUSTERI\s*:\s*NUSHASI\b|^MF\b|^(?:B\.?\s*|BELGE\s*)?SERI(?:SI)?(?:\s*NO)?\s*[:#=-]", normalized):
             started = True
             pending = []
             pending_quantity = None
@@ -185,6 +185,21 @@ def extract_receipt_items(original: list[str], total: str, issues: list[str], di
             pending = []
             continue
         name_source = line[:last.start()]
+        column_measure = None
+        # Common receipt tables print quantity, unit price and line total on
+        # one row without an "x": 1 PRODUCT 150,00 TL 150,00 TL.  Treat the
+        # penultimate amount as a unit price only when the printed arithmetic
+        # proves it.  This does not discard two genuinely conflicting amounts.
+        if len(amounts) == 2 and not quantity:
+            unit_price = decimal_money(amounts[0].group())
+            line_total = decimal_money(amounts[1].group())
+            prefix = line[:amounts[0].start()]
+            count = re.match(r"^\s*(\d+(?:[.,]\d+)?)\s+", prefix)
+            printed_quantity = Decimal(count[1].replace(',', '.')) if count else Decimal(1)
+            if printed_quantity > 0 and (printed_quantity * unit_price).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP) == line_total:
+                name_source = prefix[count.end():] if count else prefix
+                column_measure = {"quantity": str(printed_quantity), "unit": "adet",
+                                  "unit_price": str(unit_price)}
         if quantity:
             name_source = name_source[:quantity.start()] + name_source[quantity.end():]
         name = clean_name(name_source)
@@ -214,8 +229,7 @@ def extract_receipt_items(original: list[str], total: str, issues: list[str], di
                     issues.append("Ürün miktarı × birim fiyat, kalem tutarına eşit değil.")
             except ValueError:
                 issues.append("Miktar veya birim fiyat geçersiz.")
-        if len(rates) != 1:
-            issues.append("Bir ürünün KDV oranı tam okunamadı.")
+        measure = column_measure or measure
         items.append({"name": name, "amount": str(amount), "rate": int(rates[0]) if len(rates) == 1 else None, **measure})
     if not items:
         issues.append("Ürün adı ve tutarı okunamadı. Daha net bir belgeyle yeniden deneyin.")
@@ -338,7 +352,8 @@ def extract_document(text: str, kind: str) -> dict[str, Any]:
             issues.append("Belgede birden fazla numara veya vergi kimliği bulundu; tek belge yükleyin.")
         return matches[0] if matches else ""
 
-    tax_id = identifier(r"\b(?:VKN|TCKN|VERGI\s*(?:NO|NUMARASI)|V\.?\s*D\.?\s*(?:NO)?|TC\s*(?:NO)?)\s*[:#=-]?\s*(\d{10,11})\b", '\n'.join(seller_identity_lines(lines)))
+    tax_id = identifier(r"\b(?:VKN|TCKN|VERGI\s*(?:NO|NUMARASI)|V\.?\s*D\.?\s*(?:NO)?|TC\s*(?:NO)?)\s*[:#=-]?\s*(\d(?:\s*\d){9,10})\b", '\n'.join(seller_identity_lines(lines)))
+    tax_id = re.sub(r"\s", "", tax_id)
     header_ids = {value for _, value in unlabeled_tax_identity(original)}
     if tax_id:
         header_ids.add(tax_id)
@@ -458,6 +473,16 @@ def extract_document(text: str, kind: str) -> dict[str, Any]:
         issues.append("Matrah + KDV, belge toplamına eşit değil.")
     if taxes and breakdown and sum((decimal_money(row["tax"]) for row in breakdown), Decimal(0)) != decimal_money(taxes[0]):
         issues.append("KDV kırılımı, toplam KDV ile uyuşmuyor.")
+    missing_item_rates = [item for item in items if item["rate"] is None]
+    if missing_item_rates:
+        item_total = sum((decimal_money(item["amount"]) for item in items), Decimal(0)) - discount
+        if (len(breakdown) == 1 and total and item_total == decimal_money(total)
+                and decimal_money(breakdown[0]["base"]) + decimal_money(breakdown[0]["tax"]) == decimal_money(total)):
+            for item in missing_item_rates:
+                item["rate"] = breakdown[0]["rate"]
+            notes.append("Ürünlerin KDV oranı, belgedeki tek oranlı KDV toplamı ve ürün toplamları karşılaştırılarak doğrulandı.")
+        else:
+            issues.append("Bir ürünün KDV oranı tam okunamadı.")
     seller = extract_seller(original)
     date = extract_datetime(plain)
     date_tokens = re.findall(r"\b(?:20\d{2}-\d{2}-\d{2}|\d{1,2}[./-]\d{1,2}[./-](?:20\d{2}|\d{2}))\b", plain)
